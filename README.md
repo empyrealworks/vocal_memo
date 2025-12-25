@@ -60,7 +60,7 @@ lib/
 
 1. Clone the repository:
 ```bash
-   git clone https://github.com/adelaykay/vocal_memo.git
+   git clone https://github.com/empyrealworks/vocal_memo.git
    cd vocal-memo
 ```
 
