@@ -333,9 +333,9 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppTheme.teal.withOpacity(0.05),
+                      color: AppTheme.teal.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.teal.withOpacity(0.2)),
+                      border: Border.all(color: AppTheme.teal.withValues(alpha: 0.2)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -400,9 +400,9 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppTheme.orange.withOpacity(0.1),
+                        color: AppTheme.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppTheme.orange.withOpacity(0.3)),
+                        border: Border.all(color: AppTheme.orange.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         children: [
@@ -511,9 +511,9 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppTheme.teal.withOpacity(0.1),
+                      color: AppTheme.teal.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.teal.withOpacity(0.3)),
+                      border: Border.all(color: AppTheme.teal.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [

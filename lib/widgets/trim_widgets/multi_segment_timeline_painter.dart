@@ -20,11 +20,11 @@ class MultiSegmentTimelinePainter extends CustomPainter {
     final paint = Paint()..style = PaintingStyle.fill;
 
     // Draw full background (removed sections in red)
-    paint.color = Colors.red.withOpacity(0.3);
+    paint.color = Colors.red.withValues(alpha: 0.3);
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
 
     // Draw kept segments in teal
-    paint.color = AppTheme.teal.withOpacity(0.6);
+    paint.color = AppTheme.teal.withValues(alpha: 0.6);
     for (var segment in keepSegments) {
       final startX = (segment.start.inMilliseconds / totalDuration.inMilliseconds) * size.width;
       final endX = (segment.end.inMilliseconds / totalDuration.inMilliseconds) * size.width;
@@ -35,7 +35,7 @@ class MultiSegmentTimelinePainter extends CustomPainter {
     final selectionStart = currentSelection.$1;
     final selectionEnd = currentSelection.$2;
     if (selectionStart < selectionEnd) {
-      paint.color = AppTheme.orange.withOpacity(0.5);
+      paint.color = AppTheme.orange.withValues(alpha: 0.5);
       final startX = (selectionStart.inMilliseconds / totalDuration.inMilliseconds) * size.width;
       final endX = (selectionEnd.inMilliseconds / totalDuration.inMilliseconds) * size.width;
       canvas.drawRect(Rect.fromLTWH(startX, 0, endX - startX, size.height), paint);
@@ -69,7 +69,7 @@ class MultiSegmentTimelinePainter extends CustomPainter {
     );
 
     // Draw segment separators
-    paint.color = Colors.white.withOpacity(0.8);
+    paint.color = Colors.white.withValues(alpha: 0.8);
     paint.strokeWidth = 2;
     for (var segment in keepSegments) {
       final startX = (segment.start.inMilliseconds / totalDuration.inMilliseconds) * size.width;

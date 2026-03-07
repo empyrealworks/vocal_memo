@@ -126,7 +126,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Icon(
             Icons.mic_none_rounded,
             size: 64,
-            color: AppTheme.teal.withOpacity(0.3),
+            color: AppTheme.teal.withValues(alpha: 0.3),
           ),
           const SizedBox(height: 16),
           Text(

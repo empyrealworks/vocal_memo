@@ -116,7 +116,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                   height: 150,
                   margin: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: AppTheme.teal.withOpacity(0.05),
+                    color: AppTheme.teal.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Center(
@@ -133,7 +133,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                         : Icon(
                             Icons.mic_none_rounded,
                             size: 64,
-                            color: AppTheme.teal.withOpacity(0.3),
+                            color: AppTheme.teal.withValues(alpha: 0.3),
                           ),
                   ),
                 ),

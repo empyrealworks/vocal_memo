@@ -64,7 +64,6 @@ class AppTheme {
       primary: teal,
       secondary: orange,
       surface: Color(0xFF1C1C1C),
-      background: Color(0xFFCCCCCC),
       error: Colors.redAccent,
     ),
     scaffoldBackgroundColor: const Color(0xFF212222),
@@ -108,7 +107,6 @@ class AppTheme {
       foregroundColor: Colors.white,
     ),
     dividerColor: Colors.white10,
-    cardColor: const Color(0xFF1E1E1E),
-    dialogBackgroundColor: const Color(0xFF1E1E1E),
+    cardColor: const Color(0xFF1E1E1E), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF1E1E1E)),
   );
 }

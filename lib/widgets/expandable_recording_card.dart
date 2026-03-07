@@ -76,10 +76,10 @@ class _ExpandableRecordingCardState
     try {
       final file = File(widget.recording.filePath);
       if (await file.exists()) {
-        await Share.shareXFiles(
-          [XFile(widget.recording.filePath)],
+        SharePlus.instance.share(ShareParams(
           text: 'Recording: ${widget.recording.displayTitle}',
-        );
+          files: [XFile(widget.recording.filePath)]
+        ));
       }
     } catch (e) {
       print('Error sharing: $e');
@@ -108,7 +108,7 @@ class _ExpandableRecordingCardState
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(_isExpanded ? 0.1 : 0.05),
+            color: Colors.black.withValues(alpha: _isExpanded ? 0.1 : 0.05),
             blurRadius: _isExpanded ? 8 : 4,
             offset: Offset(0, _isExpanded ? 4 : 2),
           ),
@@ -126,7 +126,7 @@ class _ExpandableRecordingCardState
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: AppTheme.teal.withOpacity(0.1),
+                    color: AppTheme.teal.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(

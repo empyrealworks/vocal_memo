@@ -1,7 +1,6 @@
 // lib/providers/recording_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
-import 'package:vocal_memo/services/settings_service.dart';
 import '../models/recording.dart';
 import '../models/recording_settings.dart';
 import '../services/audio_service.dart';

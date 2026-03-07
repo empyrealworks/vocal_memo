@@ -55,10 +55,12 @@ class TranscriptionService {
           transcriptResult = result.recognizedWords;
           print('Partial transcript: $transcriptResult');
         },
-        listenMode: ListenMode.dictation,
+        listenOptions: SpeechListenOptions(
+          listenMode: ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: true,
+        ),
         pauseFor: const Duration(seconds: 30),
-        partialResults: true,
-        cancelOnError: true,
       );
 
       // Play the audio file
@@ -79,9 +81,9 @@ class TranscriptionService {
   }
 
   Future<void> startLiveTranscription(
-      Function(String) onTranscriptUpdate,
-      Function(bool) onListeningChanged,
-      ) async {
+    Function(String) onTranscriptUpdate,
+    Function(bool) onListeningChanged,
+  ) async {
     try {
       if (!_isInitialized) {
         await initialize();
@@ -99,10 +101,12 @@ class TranscriptionService {
           _currentTranscript = result.recognizedWords;
           onTranscriptUpdate(_currentTranscript);
         },
-        listenMode: ListenMode.dictation,
+        listenOptions: SpeechListenOptions(
+          listenMode: ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: true,
+        ),
         pauseFor: const Duration(seconds: 5),
-        partialResults: true,
-        cancelOnError: true,
       );
 
       _isListening = true;

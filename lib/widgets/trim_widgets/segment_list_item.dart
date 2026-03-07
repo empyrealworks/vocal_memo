@@ -19,9 +19,9 @@ class SegmentListItem extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.teal.withOpacity(0.05),
+        color: AppTheme.teal.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.teal.withOpacity(0.2)),
+        border: Border.all(color: AppTheme.teal.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -59,7 +59,7 @@ class SegmentListItem extends StatelessWidget {
                   'Duration: ${TimeFormatter.format(segment.duration)}',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AppTheme.darkText.withOpacity(0.6),
+                    color: AppTheme.darkText.withValues(alpha: 0.6),
                   ),
                 ),
               ],
