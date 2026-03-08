@@ -50,3 +50,5 @@ android/app/google-services.json
 android/local.properties
 android/key.properties
 *.jks
+.env
+lib/env/env.g.dart
