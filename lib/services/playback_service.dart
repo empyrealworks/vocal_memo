@@ -1,5 +1,6 @@
 // lib/services/playback_service.dart
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 
 class PlaybackService {
   final _audioPlayer = AudioPlayer();
@@ -22,7 +23,9 @@ class PlaybackService {
       await _audioPlayer.setSourceDeviceFile(filePath);
       return _audioPlayer.getDuration();
     } catch (e) {
-      print('Error loading audio: $e');
+      if (kDebugMode) {
+        print('Error loading audio: $e');
+      }
       return null;
     }
   }
@@ -35,13 +38,17 @@ class PlaybackService {
         if (_currentFilePath != null) {
           await _audioPlayer.play(DeviceFileSource(_currentFilePath!));
         } else {
-          print('No file loaded to play.');
+          if (kDebugMode) {
+            print('No file loaded to play.');
+          }
         }
       } else {
         await _audioPlayer.resume();
       }
     } catch (e) {
-      print('Error playing audio: $e');
+      if (kDebugMode) {
+        print('Error playing audio: $e');
+      }
     }
   }
 
@@ -49,7 +56,9 @@ class PlaybackService {
     try {
       await _audioPlayer.pause();
     } catch (e) {
-      print('Error pausing audio: $e');
+      if (kDebugMode) {
+        print('Error pausing audio: $e');
+      }
     }
   }
 
@@ -57,7 +66,9 @@ class PlaybackService {
     try {
       await _audioPlayer.stop();
     } catch (e) {
-      print('Error stopping audio: $e');
+      if (kDebugMode) {
+        print('Error stopping audio: $e');
+      }
     }
   }
 
@@ -65,7 +76,9 @@ class PlaybackService {
     try {
       await _audioPlayer.seek(position);
     } catch (e) {
-      print('Error seeking: $e');
+      if (kDebugMode) {
+        print('Error seeking: $e');
+      }
     }
   }
 
@@ -74,7 +87,9 @@ class PlaybackService {
       _playbackSpeed = speed;
       await _audioPlayer.setPlaybackRate(speed);
     } catch (e) {
-      print('Error setting playback speed: $e');
+      if (kDebugMode) {
+        print('Error setting playback speed: $e');
+      }
     }
   }
 
@@ -86,7 +101,9 @@ class PlaybackService {
         await seek(newPosition);
       }
     } catch (e) {
-      print('Error skipping forward: $e');
+      if (kDebugMode) {
+        print('Error skipping forward: $e');
+      }
     }
   }
 
@@ -98,7 +115,9 @@ class PlaybackService {
         await seek(newPosition.isNegative ? Duration.zero : newPosition);
       }
     } catch (e) {
-      print('Error skipping backward: $e');
+      if (kDebugMode) {
+        print('Error skipping backward: $e');
+      }
     }
   }
 

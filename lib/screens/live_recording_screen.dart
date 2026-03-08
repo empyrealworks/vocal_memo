@@ -1,16 +1,14 @@
 // lib/screens/live_recording_screen.dart
 import 'dart:math' as Math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vocal_memo/models/recording_settings.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/recording_provider.dart';
-import '../providers/transcription_provider.dart';
 
 class LiveRecordingScreen extends ConsumerStatefulWidget {
-  const LiveRecordingScreen({Key? key}) : super(key: key);
+  const LiveRecordingScreen({super.key});
 
   @override
   ConsumerState<LiveRecordingScreen> createState() =>
@@ -37,7 +35,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
   void _startRecording(RecordingSettings settings) async {
     await ref.read(recordingProvider.notifier).startRecording(settings);
-    await ref.read(liveTranscriptionProvider.notifier).startListening();
+
     _stopwatch.start();
     setState(() {
       _isRecording = true;
@@ -81,7 +79,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       _isPaused = false;
     });
 
-    await ref.read(liveTranscriptionProvider.notifier).stopListening();
     await ref.read(recordingProvider.notifier).stopRecording();
 
     if (mounted) {
@@ -91,7 +88,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final liveTranscription = ref.watch(liveTranscriptionProvider);
     final settings = ref.watch(settingsProvider);
 
     return Scaffold(
@@ -101,7 +97,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: _isRecording
-            ? Text('Recording...')
+            ? const Text('Recording...')
             : const Text('New Recording'),
       ),
       body: Column(
@@ -122,19 +118,19 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                   child: Center(
                     child: _isRecording
                         ? CustomPaint(
-                            painter: AnimatedWaveformPainter(
-                              color: AppTheme.teal,
-                              animationValue:
-                                  (_stopwatch.elapsedMilliseconds % 1000) /
-                                  1000,
-                            ),
-                            size: const Size(double.infinity, 150),
-                          )
+                      painter: AnimatedWaveformPainter(
+                        color: AppTheme.teal,
+                        animationValue:
+                        (_stopwatch.elapsedMilliseconds % 1000) /
+                            1000,
+                      ),
+                      size: const Size(double.infinity, 150),
+                    )
                         : Icon(
-                            Icons.mic_none_rounded,
-                            size: 64,
-                            color: AppTheme.teal.withValues(alpha: 0.3),
-                          ),
+                      Icons.mic_none_rounded,
+                      size: 64,
+                      color: AppTheme.teal.withValues(alpha: 0.3),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -149,43 +145,57 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Transcript preview
-                Expanded(
-                  child: SingleChildScrollView(
+                // Info text
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    _isRecording
+                        ? (_isPaused ? 'Recording paused' : 'Recording in progress...')
+                        : 'Tap the button below to start recording',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Transcription info
+                if (!_isRecording)
+                  Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (liveTranscription.isListening && _isRecording)
-                          Text(
-                            'Live Transcript',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.headlineSmall?.copyWith(fontSize: 14),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.teal.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppTheme.teal.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: AppTheme.teal,
+                            size: 20,
                           ),
-                        if (liveTranscription.transcript.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: AppTheme.lightGray,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                liveTranscription.transcript,
-                                style: Theme.of(context).textTheme.bodyMedium,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'After recording, use the transcribe button to convert speech to text',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).textTheme.bodySmall?.color,
                               ),
                             ),
                           ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
+
           // Recording controls
           Padding(
             padding: const EdgeInsets.all(24),
@@ -204,14 +214,8 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                             : _isPaused
                             ? _resumeRecording
                             : _pauseRecording,
-                        child: IconButton(
-                          icon: Icon(_isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded),
-                          onPressed: !_isRecording
-                              ? null
-                              : _isPaused
-                              ? _resumeRecording
-                              : _pauseRecording,
-                          tooltip: _isPaused ? 'Resume' : 'Pause',
+                        child: Icon(
+                          _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
                         ),
                       ),
                       FloatingActionButton(
@@ -248,7 +252,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 }
 
-// Animated waveform painter for live recording
+/// Animated waveform painter for live recording
 class AnimatedWaveformPainter extends CustomPainter {
   final Color color;
   final double animationValue;

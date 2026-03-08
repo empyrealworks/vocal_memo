@@ -5,7 +5,7 @@ import '../theme/app_theme.dart';
 import '../providers/playback_provider.dart';
 
 class PlaybackControls extends ConsumerWidget {
-  const PlaybackControls({Key? key}) : super(key: key);
+  const PlaybackControls({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

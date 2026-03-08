@@ -14,14 +14,14 @@ void main() async {
   await StorageService.init();
   await SettingsService.init();
 
-  final onboardingComplete = await StorageService.getOnboardingComplete();
+  final onboardingComplete = StorageService.getOnboardingComplete();
 
   runApp(ProviderScope(child: MyApp(showOnboarding: !onboardingComplete)));
 }
 
 class MyApp extends ConsumerStatefulWidget {
   final bool showOnboarding;
-  const MyApp({Key? key, required this.showOnboarding}) : super(key: key);
+  const MyApp({super.key, required this.showOnboarding});
 
   @override
   ConsumerState<MyApp> createState() => _MyAppState();

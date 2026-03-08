@@ -1,6 +1,7 @@
 
 import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:uuid/uuid.dart';
@@ -79,15 +80,21 @@ class AudioEditorService {
       File(concatListPath).deleteSync();
 
       if (ReturnCode.isSuccess(concatReturnCode)) {
-        print('Multi-trim successful: $outputPath');
+        if (kDebugMode) {
+          print('Multi-trim successful: $outputPath');
+        }
         return outputPath;
       } else {
         final output = await concatSession.getOutput();
-        print('Concatenation failed: $output');
+        if (kDebugMode) {
+          print('Concatenation failed: $output');
+        }
         return null;
       }
     } catch (e) {
-      print('Error applying multiple trims: $e');
+      if (kDebugMode) {
+        print('Error applying multiple trims: $e');
+      }
       return null;
     }
   }
@@ -118,7 +125,9 @@ class AudioEditorService {
       }
       return null;
     } catch (e) {
-      print('Error in simple trim: $e');
+      if (kDebugMode) {
+        print('Error in simple trim: $e');
+      }
       return null;
     }
   }
@@ -161,7 +170,9 @@ class AudioEditorService {
         'end': silenceEnd ?? Duration.zero,
       };
     } catch (e) {
-      print('Error detecting silence: $e');
+      if (kDebugMode) {
+        print('Error detecting silence: $e');
+      }
       return null;
     }
   }

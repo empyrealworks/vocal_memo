@@ -1,22 +1,23 @@
+// lib/screens/trim_screen.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:audio_waveforms/audio_waveforms.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
 import '../models/trim_segment.dart';
 import '../providers/recording_provider.dart';
 import '../providers/playback_provider.dart';
 import '../services/audio_editor_service.dart';
-import '../widgets/playback_controls.dart';
 import '../widgets/trim_widgets/info_row.dart';
 import '../widgets/trim_widgets/segment_list_item.dart';
-import '../widgets/trim_widgets/multi_segment_timeline_painter.dart';
 import '../utils/time_formatter.dart';
 
 class TrimScreen extends ConsumerStatefulWidget {
   final Recording recording;
 
-  const TrimScreen({Key? key, required this.recording}) : super(key: key);
+  const TrimScreen({super.key, required this.recording});
 
   @override
   ConsumerState<TrimScreen> createState() => _TrimScreenState();
@@ -28,7 +29,9 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
   final _editorService = AudioEditorService();
   bool _isSaving = false;
   bool _isDetectingSilence = false;
-  late PlaybackNotifier providerNotifier = ref.read(playbackProvider.notifier);
+
+  // Waveform controller for visualization
+  PlayerController? _waveformController;
 
   // Keep track of segments to keep
   List<TrimSegment> _keepSegments = [];
@@ -47,15 +50,36 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
     _keepSegments = [TrimSegment(start: Duration.zero, end: widget.recording.duration)];
     _saveToHistory();
 
-    // Load audio for playback
+    // Initialize waveform
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      providerNotifier.load(widget.recording.filePath);
+      _initializeWaveform();
+      ref.read(playbackProvider.notifier).load(widget.recording.filePath);
     });
+  }
+
+  Future<void> _initializeWaveform() async {
+    try {
+      _waveformController = PlayerController();
+      await _waveformController!.preparePlayer(
+        path: widget.recording.filePath,
+        shouldExtractWaveform: true,
+        noOfSamples: 200,
+      );
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error initializing waveform: $e');
+      }
+    }
   }
 
   @override
   void dispose() {
-    providerNotifier.stop();
+    ref.read(playbackProvider.notifier).stop();
+    _waveformController?.dispose();
     super.dispose();
   }
 
@@ -171,7 +195,9 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
         }
       }
     } catch (e) {
-      print('Error auto-trimming: $e');
+      if (kDebugMode) {
+        print('Error auto-trimming: $e');
+      }
     } finally {
       if (mounted) {
         setState(() => _isDetectingSilence = false);
@@ -220,7 +246,9 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      print('Error saving trimmed audio: $e');
+      if (kDebugMode) {
+        print('Error saving trimmed audio: $e');
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error saving trimmed recording')),
@@ -329,28 +357,168 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Playback controls
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppTheme.teal.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.teal.withValues(alpha: 0.2)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Preview Audio',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const PlaybackControls(),
-                      ],
+                  // Interactive Waveform with Dual Handles
+                  Text(
+                    'Select Section to Remove',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 12),
+
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Container(
+                        height: 120,
+                        decoration: BoxDecoration(
+                          color: AppTheme.lightGray,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.mediumGray),
+                        ),
+                        child: Stack(
+                          children: [
+                            // Waveform
+                            if (_waveformController != null)
+                              AudioFileWaveforms(
+                                size: Size(constraints.maxWidth, 120),
+                                playerController: _waveformController!,
+                                waveformType: WaveformType.fitWidth,
+                                playerWaveStyle: PlayerWaveStyle(
+                                  fixedWaveColor: AppTheme.teal.withValues(alpha: 0.3),
+                                  liveWaveColor: AppTheme.teal,
+                                  spacing: 6,
+                                  waveThickness: 3,
+                                  showSeekLine: false,
+                                ),
+                              )
+                            else
+                              const Center(
+                                child: CircularProgressIndicator(
+                                  color: AppTheme.teal,
+                                ),
+                              ),
+
+                            // Selection overlay
+                            CustomPaint(
+                              painter: TrimSelectionPainter(
+                                startTime: _startTime,
+                                endTime: _endTime,
+                                totalDuration: widget.recording.duration,
+                                currentPosition: playbackState.position,
+                              ),
+                              size: Size.infinite,
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Dual slider handles
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: const BoxDecoration(
+                                    color: AppTheme.orange,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Start: ${TimeFormatter.format(_startTime)}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Slider(
+                              value: _startTime.inMilliseconds.toDouble(),
+                              min: 0,
+                              max: widget.recording.duration.inMilliseconds.toDouble(),
+                              activeColor: AppTheme.orange,
+                              onChanged: (value) {
+                                setState(() {
+                                  _startTime = Duration(milliseconds: value.toInt());
+                                  if (_startTime >= _endTime) {
+                                    _endTime = _startTime + const Duration(seconds: 1);
+                                    if (_endTime > widget.recording.duration) {
+                                      _endTime = widget.recording.duration;
+                                      _startTime = _endTime - const Duration(seconds: 1);
+                                    }
+                                  }
+                                });
+                              },
+                              onChangeEnd: (value) {
+                                ref.read(playbackProvider.notifier).seek(_startTime);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: const BoxDecoration(
+                                    color: AppTheme.teal,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'End: ${TimeFormatter.format(_endTime)}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Slider(
+                              value: _endTime.inMilliseconds.toDouble(),
+                              min: 0,
+                              max: widget.recording.duration.inMilliseconds.toDouble(),
+                              activeColor: AppTheme.teal,
+                              onChanged: (value) {
+                                setState(() {
+                                  _endTime = Duration(milliseconds: value.toInt());
+                                  if (_endTime <= _startTime) {
+                                    _startTime = _endTime - const Duration(seconds: 1);
+                                    if (_startTime < Duration.zero) {
+                                      _startTime = Duration.zero;
+                                      _endTime = const Duration(seconds: 1);
+                                    }
+                                  }
+                                });
+                              },
+                              onChangeEnd: (value) {
+                                ref.read(playbackProvider.notifier).seek(_endTime);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
                   const SizedBox(height: 24),
 
                   // Action buttons
@@ -386,123 +554,11 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
                           label: const Text('Auto-Trim'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.teal,
-                            foregroundColor: AppTheme.darkText,
+                            foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Selection info
-                  if (_startTime < _endTime)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.orange.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppTheme.orange.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.cut, color: AppTheme.orange, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Selection: ${TimeFormatter.format(_startTime)} → ${TimeFormatter.format(_endTime)} (${TimeFormatter.format(_endTime - _startTime)})',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.5),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (_startTime < _endTime) const SizedBox(height: 16),
-
-                  // Sliders
-                  Text(
-                    'Selection Start: ${TimeFormatter.format(_startTime)}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Slider(
-                    value: _startTime.inMilliseconds.toDouble(),
-                    min: 0,
-                    max: widget.recording.duration.inMilliseconds.toDouble(),
-                    activeColor: AppTheme.teal,
-                    onChanged: (value) {
-                      setState(() {
-                        _startTime = Duration(milliseconds: value.toInt());
-                        if (_startTime >= _endTime) {
-                          _endTime = _startTime + const Duration(seconds: 1);
-                          if (_endTime > widget.recording.duration) {
-                            _endTime = widget.recording.duration;
-                            _startTime = _endTime - const Duration(seconds: 1);
-                          }
-                        }
-                      });
-                    },
-                    onChangeEnd: (value) {
-                      ref.read(playbackProvider.notifier).seek(_startTime);
-                    },
-                  ),
-                  const SizedBox(height: 24),
-
-                  Text(
-                    'Selection End: ${TimeFormatter.format(_endTime)}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Slider(
-                    value: _endTime.inMilliseconds.toDouble(),
-                    min: 0,
-                    max: widget.recording.duration.inMilliseconds.toDouble(),
-                    activeColor: AppTheme.orange,
-                    onChanged: (value) {
-                      setState(() {
-                        _endTime = Duration(milliseconds: value.toInt());
-                        if (_endTime <= _startTime) {
-                          _startTime = _endTime - const Duration(seconds: 1);
-                          if (_startTime < Duration.zero) {
-                            _startTime = Duration.zero;
-                            _endTime = const Duration(seconds: 1);
-                          }
-                        }
-                      });
-                    },
-                    onChangeEnd: (value) {
-                      ref.read(playbackProvider.notifier).seek(_endTime);
-                    },
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Timeline
-                  Container(
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: AppTheme.lightGray,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: CustomPaint(
-                      painter: MultiSegmentTimelinePainter(
-                        keepSegments: _keepSegments,
-                        currentSelection: (_startTime, _endTime),
-                        totalDuration: widget.recording.duration,
-                        currentPosition: playbackState.position,
-                      ),
-                      size: Size.infinite,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('0:00', style: Theme.of(context).textTheme.labelSmall),
-                      Text(widget.recording.formattedDuration,
-                          style: Theme.of(context).textTheme.labelSmall),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -521,10 +577,10 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Select unwanted sections and tap "Remove Selection" to cut them out. You can remove multiple sections before saving.',
+                            'Use the dual sliders to select unwanted sections, then tap "Remove Selection". You can remove multiple sections before saving.',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.5),
+                              color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                             ),
                           ),
                         ),
@@ -557,4 +613,73 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
       ),
     );
   }
+}
+
+/// Custom painter for trim selection overlay
+class TrimSelectionPainter extends CustomPainter {
+  final Duration startTime;
+  final Duration endTime;
+  final Duration totalDuration;
+  final Duration currentPosition;
+
+  TrimSelectionPainter({
+    required this.startTime,
+    required this.endTime,
+    required this.totalDuration,
+    required this.currentPosition,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint();
+
+    // Calculate positions
+    final startX = (startTime.inMilliseconds / totalDuration.inMilliseconds) * size.width;
+    final endX = (endTime.inMilliseconds / totalDuration.inMilliseconds) * size.width;
+
+    // Draw selection overlay (area to remove)
+    if (startX < endX) {
+      paint.color = AppTheme.orange.withValues(alpha: 0.3);
+      canvas.drawRect(
+        Rect.fromLTWH(startX, 0, endX - startX, size.height),
+        paint,
+      );
+
+      // Draw start handle
+      paint.color = AppTheme.orange;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(startX - 3, 0, 6, size.height),
+          const Radius.circular(3),
+        ),
+        paint,
+      );
+
+      // Draw end handle
+      paint.color = AppTheme.teal;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(endX - 3, 0, 6, size.height),
+          const Radius.circular(3),
+        ),
+        paint,
+      );
+    }
+
+    // Draw playback position
+    final currentX = (currentPosition.inMilliseconds / totalDuration.inMilliseconds) * size.width;
+    paint.color = Colors.white;
+    paint.strokeWidth = 2;
+    canvas.drawLine(
+      Offset(currentX, 0),
+      Offset(currentX, size.height),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(TrimSelectionPainter oldDelegate) =>
+      oldDelegate.startTime != startTime ||
+          oldDelegate.endTime != endTime ||
+          oldDelegate.currentPosition != currentPosition;
 }

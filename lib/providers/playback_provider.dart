@@ -1,11 +1,13 @@
 // lib/providers/playback_provider.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../models/playback_state.dart';
 import '../services/playback_service.dart';
 
-final playbackServiceProvider = Provider((ref) {
+// Playback service provider with auto-dispose
+final playbackServiceProvider = Provider.autoDispose((ref) {
   final service = PlaybackService();
   ref.onDispose(() => service.dispose());
   return service;
@@ -49,7 +51,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
         isLoading: false,
       );
     } catch (e) {
-      print('Error loading and playing: $e');
+      if (kDebugMode) {
+        print('Error loading audio: $e');
+      }
       state = state.copyWith(isLoading: false);
     }
   }
@@ -98,13 +102,20 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   void reset() {
     state = PlaybackState();
   }
+
+  @override
+  void dispose() {
+    _playbackService.dispose();
+    super.dispose();
+  }
 }
 
-final playbackProvider =
-StateNotifierProvider<PlaybackNotifier, PlaybackState>((ref) {
-  final playbackService = ref.watch(playbackServiceProvider);
-  return PlaybackNotifier(playbackService);
-});
+final playbackProvider = StateNotifierProvider.autoDispose<PlaybackNotifier, PlaybackState>(
+      (ref) {
+    final playbackService = ref.watch(playbackServiceProvider);
+    return PlaybackNotifier(playbackService);
+  },
+);
 
 // Helper providers
 final isPlayingProvider = Provider<bool>((ref) {

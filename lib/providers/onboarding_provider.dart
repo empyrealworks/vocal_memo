@@ -8,7 +8,7 @@ StateNotifierProvider<OnboardingNotifier, bool>((ref) {
 });
 
 class OnboardingNotifier extends StateNotifier<bool> {
-  OnboardingNotifier(bool completed) : super(completed);
+  OnboardingNotifier(super.completed);
 
   Future<void> completeOnboarding() async {
     await StorageService.setOnboardingComplete(true);

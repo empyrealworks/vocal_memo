@@ -8,9 +8,9 @@ class SpeedSelector extends ConsumerWidget {
   final List<double> speeds;
 
   const SpeedSelector({
-    Key? key,
+    super.key,
     this.speeds = const [1.0, 1.5, 2.0],
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

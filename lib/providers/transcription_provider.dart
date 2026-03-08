@@ -1,145 +1,133 @@
 // lib/providers/transcription_provider.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
-import '../services/transcription_service.dart';
+import 'package:riverpod/legacy.dart';
+import '../services/gemini_transcription_service.dart';
 import '../models/recording.dart';
 import 'recording_provider.dart';
 
-// Transcription service provider
-final transcriptionServiceProvider = Provider((ref) {
-  final service = TranscriptionService();
-  ref.onDispose(() => service.dispose());
-  return service;
+/// Provider for Gemini transcription service
+final geminiTranscriptionServiceProvider = Provider<GeminiTranscriptionService>((ref) {
+  return GeminiTranscriptionService();
 });
 
-// Initialize transcription
-final initializeTranscriptionProvider = FutureProvider<bool>((ref) async {
-  final transcriptionService = ref.watch(transcriptionServiceProvider);
-  return await transcriptionService.initialize();
-});
+/// State for tracking transcription progress
+class TranscriptionState {
+  final bool isTranscribing;
+  final String? error;
+  final double? progress; // 0.0 to 1.0
 
-// Live transcription state
-class LiveTranscriptionState {
-  final String transcript;
-  final bool isListening;
-
-  LiveTranscriptionState({
-    required this.transcript,
-    required this.isListening,
+  const TranscriptionState({
+    this.isTranscribing = false,
+    this.error,
+    this.progress,
   });
 
-  LiveTranscriptionState copyWith({
-    String? transcript,
-    bool? isListening,
-  }) =>
-      LiveTranscriptionState(
-        transcript: transcript ?? this.transcript,
-        isListening: isListening ?? this.isListening,
-      );
-}
-
-class LiveTranscriptionNotifier extends StateNotifier<LiveTranscriptionState> {
-  final TranscriptionService _transcriptionService;
-
-  LiveTranscriptionNotifier(this._transcriptionService)
-      : super(LiveTranscriptionState(transcript: '', isListening: false));
-
-  Future<void> startListening() async {
-    await _transcriptionService.startLiveTranscription(
-          (transcript) {
-        state = state.copyWith(transcript: transcript);
-      },
-          (isListening) {
-        state = state.copyWith(isListening: isListening);
-      },
+  TranscriptionState copyWith({
+    bool? isTranscribing,
+    String? error,
+    double? progress,
+  }) {
+    return TranscriptionState(
+      isTranscribing: isTranscribing ?? this.isTranscribing,
+      error: error,
+      progress: progress ?? this.progress,
     );
   }
-
-  Future<void> stopListening() async {
-    await _transcriptionService.stopLiveTranscription((isListening) {
-      state = state.copyWith(isListening: isListening);
-    });
-  }
-
-  void reset() {
-    state = LiveTranscriptionState(transcript: '', isListening: false);
-  }
 }
 
-final liveTranscriptionProvider =
-StateNotifierProvider<LiveTranscriptionNotifier, LiveTranscriptionState>(
-      (ref) {
-    final transcriptionService = ref.watch(transcriptionServiceProvider);
-    return LiveTranscriptionNotifier(transcriptionService);
-  },
-);
+/// StateNotifier for managing transcription state
+class TranscriptionNotifier extends StateNotifier<TranscriptionState> {
+  final GeminiTranscriptionService _service;
+  final Ref _ref;
 
-// Async transcription for files
-class FileTranscriptionNotifier extends StateNotifier<AsyncValue<String>> {
-  final TranscriptionService _transcriptionService;
-  final String _filePath;
+  TranscriptionNotifier(this._service, this._ref)
+      : super(const TranscriptionState());
 
-  FileTranscriptionNotifier(this._transcriptionService, this._filePath)
-      : super(const AsyncValue.loading()) {
-    _transcribe();
-  }
+  /// Transcribe a recording
+  Future<String?> transcribe(Recording recording) async {
+    // Don't re-transcribe if already has transcript
+    if (recording.transcript != null && recording.transcript!.isNotEmpty) {
+      return recording.transcript;
+    }
 
-  Future<void> _transcribe() async {
     try {
-      state = const AsyncValue.loading();
-      final transcript = await _transcriptionService.transcribeFile(_filePath);
-      state = AsyncValue.data(transcript!);
-    } catch (e, stack) {
-      state = AsyncValue.error(e, stack);
+      // Update state to show transcribing
+      state = const TranscriptionState(isTranscribing: true);
+
+      if (kDebugMode) {
+        print('🎯 Transcribing recording: ${recording.id}');
+      }
+      final transcript = await _service.transcribeAudioFile(
+        recording.filePath,
+      );
+
+      if (transcript != null && transcript.isNotEmpty) {
+        // Update the recording with transcript
+        final recordingNotifier = _ref.read(recordingProvider.notifier);
+        await recordingNotifier.updateRecording(
+          recording.copyWith(
+            transcript: transcript,
+            isTranscribing: false,
+          ),
+        );
+
+        // Update state
+        state = const TranscriptionState(isTranscribing: false);
+
+        if (kDebugMode) {
+          print('✅ Transcription complete for ${recording.id}');
+        }
+        return transcript;
+      } else {
+        throw Exception('Transcription returned empty result');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Transcription failed for ${recording.id}: $e');
+      }
+
+      // Update state with error
+      state = TranscriptionState(
+        isTranscribing: false,
+        error: e.toString(),
+      );
+
+      // Mark recording as not transcribing
+      final recordingNotifier = _ref.read(recordingProvider.notifier);
+      await recordingNotifier.updateRecording(
+        recording.copyWith(isTranscribing: false),
+      );
+
+      rethrow;
     }
   }
 
-  Future<void> retry() async {
-    await _transcribe();
+  void reset() {
+    state = const TranscriptionState();
   }
 }
 
-// Family provider for file transcription
-final fileTranscriptionProvider =
-StateNotifierProvider.family<FileTranscriptionNotifier, AsyncValue<String>,
-    String>((ref, filePath) {
-  final transcriptionService = ref.watch(transcriptionServiceProvider);
-  return FileTranscriptionNotifier(transcriptionService, filePath);
-});
+/// Provider for transcription state per recording
+final transcriptionNotifierProvider =
+StateNotifierProvider.family<TranscriptionNotifier, TranscriptionState, String>(
+      (ref, recordingId) {
+    final service = ref.watch(geminiTranscriptionServiceProvider);
+    return TranscriptionNotifier(service, ref);
+  },
+);
 
-// Provider to transcribe and update recording
-final transcribeAndUpdateRecordingProvider =
-FutureProvider.family<void, Recording>((ref, recording) async {
-  if (recording.transcript != null && recording.transcript!.isNotEmpty) {
-    return; // Already transcribed
-  }
+/// Provider to get transcription status for a recording
+final transcriptionStatusProvider = Provider.family<String, String>(
+      (ref, recordingId) {
+    final state = ref.watch(transcriptionNotifierProvider(recordingId));
 
-  try {
-    final transcriptionService = ref.watch(transcriptionServiceProvider);
-    final recordingNotifier = ref.read(recordingProvider.notifier);
-
-    // Mark as transcribing
-    await recordingNotifier.updateRecording(
-      recording.copyWith(isTranscribing: true),
-    );
-
-    // Transcribe
-    final transcript =
-    await transcriptionService.transcribeFile(recording.filePath);
-
-    // Update recording with transcript
-    await recordingNotifier.updateRecording(
-      recording.copyWith(
-        transcript: transcript,
-        isTranscribing: false,
-      ),
-    );
-  } catch (e) {
-    print('Error transcribing: $e');
-    // Mark transcription as failed but keep recording
-    final recordingNotifier = ref.read(recordingProvider.notifier);
-    await recordingNotifier.updateRecording(
-      recording.copyWith(isTranscribing: false),
-    );
-  }
-});
+    if (state.isTranscribing) {
+      return 'Transcribing...';
+    } else if (state.error != null) {
+      return 'Transcription failed';
+    } else {
+      return 'Ready to transcribe';
+    }
+  },
+);

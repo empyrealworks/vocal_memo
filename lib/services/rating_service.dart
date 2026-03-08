@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:in_app_review/in_app_review.dart';
 
 class RatingService {
@@ -14,7 +15,9 @@ class RatingService {
         );
       }
     } catch (e) {
-      print("Error launching review: $e");
+      if (kDebugMode) {
+        print("Error launching review: $e");
+      }
     }
   }
 }

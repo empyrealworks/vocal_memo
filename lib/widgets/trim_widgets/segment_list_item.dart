@@ -8,10 +8,10 @@ class SegmentListItem extends StatelessWidget {
   final TrimSegment segment;
 
   const SegmentListItem({
-    Key? key,
+    super.key,
     required this.index,
     required this.segment,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
