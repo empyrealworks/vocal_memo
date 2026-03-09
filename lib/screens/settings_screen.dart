@@ -127,7 +127,7 @@ class SettingsScreen extends ConsumerWidget {
             value: settings.showWaveform,
             inactiveTrackColor: Colors.grey,
             onChanged: (v) {
-              // updateSettings(settings.copyWith(showWaveform: v));
+              updateSettings(settings.copyWith(showWaveform: v));
             },
           ),
 
@@ -187,8 +187,8 @@ class SettingsScreen extends ConsumerWidget {
               showAboutDialog(
                 context: context,
                 applicationName: "Vocal Memo",
-                applicationVersion: "1.0.0",
-                applicationLegalese: "© 2025 Adeleke Olasope",
+                applicationVersion: "1.3.0",
+                applicationLegalese: "© 2026 Adeleke Olasope",
               );
             },
           ),

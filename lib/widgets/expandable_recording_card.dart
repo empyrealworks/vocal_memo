@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:audio_waveforms/audio_waveforms.dart';
+import 'package:vocal_memo/screens/transcript_viewer_screen.dart';
 import 'dart:io';
+import '../providers/settings_provider.dart';
 import '../providers/transcription_provider.dart';
 import '../screens/trim_screen.dart';
 import '../theme/app_theme.dart';
@@ -15,10 +17,7 @@ import '../providers/playback_provider.dart';
 class ExpandableRecordingCard extends ConsumerStatefulWidget {
   final Recording recording;
 
-  const ExpandableRecordingCard({
-    super.key,
-    required this.recording,
-  });
+  const ExpandableRecordingCard({super.key, required this.recording});
 
   @override
   ConsumerState<ExpandableRecordingCard> createState() =>
@@ -92,9 +91,9 @@ class _ExpandableRecordingCardState
   void _saveTitle() {
     final newTitle = _titleController.text.trim();
     if (newTitle.isNotEmpty && newTitle != widget.recording.title) {
-      ref.read(recordingProvider.notifier).updateRecording(
-        widget.recording.copyWith(title: newTitle),
-      );
+      ref
+          .read(recordingProvider.notifier)
+          .updateRecording(widget.recording.copyWith(title: newTitle));
     }
     setState(() => _isEditingTitle = false);
   }
@@ -103,9 +102,11 @@ class _ExpandableRecordingCardState
     try {
       final file = File(widget.recording.filePath);
       if (await file.exists()) {
-        await SharePlus.instance.share(ShareParams(
-          files: [XFile(widget.recording.filePath)],
-          text: 'Recording: ${widget.recording.displayTitle}',)
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(widget.recording.filePath)],
+            text: 'Recording: ${widget.recording.displayTitle}',
+          ),
         );
       }
     } catch (e) {
@@ -144,7 +145,8 @@ class _ExpandableRecordingCardState
       );
 
       // Trigger transcription using the StateNotifier
-      await ref.read(transcriptionNotifierProvider(widget.recording.id).notifier)
+      await ref
+          .read(transcriptionNotifierProvider(widget.recording.id).notifier)
           .transcribe(widget.recording);
 
       if (mounted) {
@@ -173,8 +175,11 @@ class _ExpandableRecordingCardState
   @override
   Widget build(BuildContext context) {
     final playbackState = ref.watch(playbackProvider);
-    final isCurrentlyPlaying = playbackState.currentFilePath == widget.recording.filePath;
-    final transcriptionState = ref.watch(transcriptionNotifierProvider(widget.recording.id));
+    final isCurrentlyPlaying =
+        playbackState.currentFilePath == widget.recording.filePath;
+    final transcriptionState = ref.watch(
+      transcriptionNotifierProvider(widget.recording.id),
+    );
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -210,7 +215,9 @@ class _ExpandableRecordingCardState
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
-                    _isExpanded ? Icons.arrow_drop_down_rounded : Icons.play_arrow_rounded,
+                    _isExpanded
+                        ? Icons.arrow_drop_down_rounded
+                        : Icons.play_arrow_rounded,
                     color: AppTheme.teal,
                     size: _isExpanded ? 40 : 24,
                   ),
@@ -225,36 +232,49 @@ class _ExpandableRecordingCardState
                           Expanded(
                             child: _isEditingTitle
                                 ? TextField(
-                              controller: _titleController,
-                              autofocus: true,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.darkText,
-                              ),
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 4,
-                                ),
-                                border: OutlineInputBorder(),
-                              ),
-                              onSubmitted: (_) => _saveTitle(),
-                            )
+                                    controller: _titleController,
+                                    autofocus: true,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                                    ),
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 4,
+                                      ),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    onSubmitted: (_) => _saveTitle(),
+                                  )
                                 : GestureDetector(
-                              onTap: _startEditingTitle,
-                              child: Text(
-                                widget.recording.displayTitle,
-                                style: Theme.of(context).textTheme.titleMedium,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
+                                    onTap: _startEditingTitle,
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          widget.recording.displayTitle,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        if (_isExpanded)
+                                          Icon(
+                                          Icons.edit,
+                                          size: 14,
+                                          color: AppTheme.teal,
+                                        )
+                                      ],
+                                    ),
+                                  ),
                           ),
                           if (_isEditingTitle)
                             IconButton(
-                              icon: const Icon(Icons.check, size: 18),
+                              icon: const Icon(Icons.check, size: 24, color: AppTheme.teal,),
                               onPressed: _saveTitle,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
@@ -316,63 +336,98 @@ class _ExpandableRecordingCardState
           if (_isExpanded) ...[
             const SizedBox(height: 16),
 
-            // Waveform visualization
-            if (_waveformController != null)
-              LayoutBuilder(
-                builder: (context, constraints) {
+            // Waveform visualization (conditionally shown based on settings)
+            Consumer(
+              builder: (context, ref, child) {
+                final settings = ref.watch(settingsProvider);
+
+                if (!settings.showWaveform) {
+                  // If waveform is disabled, show placeholder
                   return Container(
                     height: 80,
                     decoration: BoxDecoration(
                       color: Theme.of(context).scaffoldBackgroundColor,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: GestureDetector(
-                      onTapDown: (details) async {
-                        // Calculate position based on tap
-                        final double tapPosition = details.localPosition.dx;
-                        final double width = constraints.maxWidth;
-                        final double percentage = (tapPosition / width).clamp(0.0, 1.0);
-
-                        // Calculate seek position
-                        final Duration seekPosition = Duration(
-                          milliseconds: (widget.recording.duration.inMilliseconds * percentage).toInt(),
-                        );
-
-                        // Seek both the waveform and playback
-                        await _waveformController?.seekTo(seekPosition.inMilliseconds);
-                        await ref.read(playbackProvider.notifier).seek(seekPosition);
-                      },
-                      child: AudioFileWaveforms(
-                        size: Size(constraints.maxWidth, 80),
-                        playerController: _waveformController!,
-                        waveformType: WaveformType.fitWidth,
-                        playerWaveStyle: PlayerWaveStyle(
-                          fixedWaveColor: AppTheme.teal.withValues(alpha: 0.3),
-                          liveWaveColor: AppTheme.teal,
-                          spacing: 6,
-                          waveThickness: 3,
-                          showSeekLine: true,
-                          seekLineColor: AppTheme.orange,
-                          seekLineThickness: 2,
+                    child: Center(
+                      child: Text(
+                        'Waveform disabled in settings',
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                          fontSize: 12,
                         ),
                       ),
                     ),
                   );
-                },
-              )
-            else
-              Container(
-                height: 80,
-                decoration: BoxDecoration(
-                  color: AppTheme.lightGray,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    color: AppTheme.teal,
-                  ),
-                ),
-              ),
+                }
+
+                if (_waveformController != null) {
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Container(
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: GestureDetector(
+                          onTapDown: (details) async {
+                            // Calculate position based on tap
+                            final double tapPosition = details.localPosition.dx;
+                            final double width = constraints.maxWidth;
+                            final double percentage = (tapPosition / width)
+                                .clamp(0.0, 1.0);
+
+                            // Calculate seek position
+                            final Duration seekPosition = Duration(
+                              milliseconds:
+                                  (widget.recording.duration.inMilliseconds *
+                                          percentage)
+                                      .toInt(),
+                            );
+
+                            // Seek both the waveform and playback
+                            await _waveformController?.seekTo(
+                              seekPosition.inMilliseconds,
+                            );
+                            await ref
+                                .read(playbackProvider.notifier)
+                                .seek(seekPosition);
+                          },
+                          child: AudioFileWaveforms(
+                            size: Size(constraints.maxWidth, 80),
+                            playerController: _waveformController!,
+                            waveformType: WaveformType.fitWidth,
+                            playerWaveStyle: PlayerWaveStyle(
+                              fixedWaveColor: AppTheme.teal.withValues(
+                                alpha: 0.3,
+                              ),
+                              liveWaveColor: AppTheme.teal,
+                              spacing: 6,
+                              waveThickness: 3,
+                              showSeekLine: true,
+                              seekLineColor: AppTheme.orange,
+                              seekLineThickness: 2,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                } else {
+                  return Container(
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: AppTheme.lightGray,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(color: AppTheme.teal),
+                    ),
+                  );
+                }
+              },
+            ),
 
             const SizedBox(height: 8),
 
@@ -432,9 +487,13 @@ class _ExpandableRecordingCardState
                     ),
                     onPressed: () async {
                       if (isCurrentlyPlaying) {
-                        await ref.read(playbackProvider.notifier).togglePlayPause();
+                        await ref
+                            .read(playbackProvider.notifier)
+                            .togglePlayPause();
                       } else {
-                        await ref.read(playbackProvider.notifier).load(widget.recording.filePath);
+                        await ref
+                            .read(playbackProvider.notifier)
+                            .load(widget.recording.filePath);
                         await _waveformController?.startPlayer();
                       }
                     },
@@ -456,10 +515,11 @@ class _ExpandableRecordingCardState
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [1.0, 1.5, 2.0].map((speed) {
-                final label =
-                speed == speed.toInt() ? '${speed.toInt()}x' : '${speed}x';
-                final isSelected = isCurrentlyPlaying &&
-                    playbackState.playbackSpeed == speed;
+                final label = speed == speed.toInt()
+                    ? '${speed.toInt()}x'
+                    : '${speed}x';
+                final isSelected =
+                    isCurrentlyPlaying && playbackState.playbackSpeed == speed;
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -489,44 +549,80 @@ class _ExpandableRecordingCardState
             ),
             const SizedBox(height: 16),
 
-            // Transcript display
-            if (widget.recording.transcript != null && widget.recording.transcript!.isNotEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.text_fields,
-                          size: 16,
-                          color: AppTheme.teal,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Transcript',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
+            // Transcript display with preview
+            if (widget.recording.transcript != null &&
+                widget.recording.transcript!.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          TranscriptViewerScreen(recording: widget.recording),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppTheme.teal.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.text_fields,
+                            size: 16,
+                            color: AppTheme.teal,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Transcript',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const Spacer(),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 12,
+                            color: AppTheme.teal.withValues(alpha: 0.5),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.recording.transcript!,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (widget.recording.transcript!.split('\n').length > 4 ||
+                          widget.recording.transcript!.length > 200)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Tap to view full transcript',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.teal,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.recording.transcript!,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
 
-            if (widget.recording.transcript != null && widget.recording.transcript!.isNotEmpty)
+            if (widget.recording.transcript != null &&
+                widget.recording.transcript!.isNotEmpty)
               const SizedBox(height: 16),
 
             // Action buttons
@@ -540,7 +636,8 @@ class _ExpandableRecordingCardState
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => TrimScreen(recording: widget.recording),
+                        builder: (context) =>
+                            TrimScreen(recording: widget.recording),
                       ),
                     );
                   },
@@ -549,19 +646,23 @@ class _ExpandableRecordingCardState
                 IconButton(
                   icon: transcriptionState.isTranscribing
                       ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppTheme.teal,
-                    ),
-                  )
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppTheme.teal,
+                          ),
+                        )
                       : const Icon(Icons.text_fields_rounded),
                   color: widget.recording.transcript != null
                       ? AppTheme.orange
                       : AppTheme.teal,
-                  onPressed: transcriptionState.isTranscribing ? null : _transcribeRecording,
-                  tooltip: widget.recording.transcript != null ? 'Re-transcribe' : 'Transcribe',
+                  onPressed: transcriptionState.isTranscribing
+                      ? null
+                      : _transcribeRecording,
+                  tooltip: widget.recording.transcript != null
+                      ? 'Re-transcribe'
+                      : 'Transcribe',
                 ),
                 IconButton(
                   icon: Icon(
@@ -621,9 +722,14 @@ class _ExpandableRecordingCardState
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: AppTheme.orange)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: AppTheme.orange),
+        ),
         title: const Text('Delete Recording'),
-        content: const Text('Are you sure you want to delete this recording? \nThis action cannot be undone.'),
+        content: const Text(
+          'Are you sure you want to delete this recording? \nThis action cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -636,10 +742,7 @@ class _ExpandableRecordingCardState
                   .deleteRecording(widget.recording.id);
               Navigator.pop(context);
             },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.red),
-            ),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),

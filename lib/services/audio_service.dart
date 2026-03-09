@@ -4,6 +4,7 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'dart:io';
 import '../models/recording.dart';
 import '../models/recording_settings.dart';
@@ -88,6 +89,12 @@ class AudioService {
       final fileName = '${const Uuid().v4()}.${settings.audioFormat}';
       _currentRecordingPath = '${recordingsDir.path}/$fileName';
 
+      // Enable wakelock to keep recording active when screen is off
+      await WakelockPlus.enable();
+      if (kDebugMode) {
+        print('🔒 Wakelock enabled - screen can turn off without stopping recording');
+      }
+
       // IMPORTANT: Play start beep BEFORE starting recording
       if (kDebugMode) {
         print('🔊 Playing start beep...');
@@ -123,6 +130,8 @@ class AudioService {
       if (kDebugMode) {
         print('Error starting recording: $e');
       }
+      // Disable wakelock if recording failed to start
+      await WakelockPlus.disable();
       return null;
     }
   }
@@ -156,6 +165,12 @@ class AudioService {
 
       // IMPORTANT: Stop recording FIRST
       final path = await _audioRecorder.stop();
+
+      // Disable wakelock now that recording is stopped
+      await WakelockPlus.disable();
+      if (kDebugMode) {
+        print('🔒 Wakelock disabled - recording stopped - screen can sleep normally');
+      }
 
       if (path == null || _currentRecordingPath == null) {
         return null;
@@ -197,6 +212,8 @@ class AudioService {
       if (kDebugMode) {
         print('Error stopping recording: $e');
       }
+      // Make sure wakelock is disabled even if there's an error
+      await WakelockPlus.disable();
       return null;
     }
   }
@@ -258,6 +275,7 @@ class AudioService {
 
   /// Clean up resources
   void dispose() {
+    WakelockPlus.disable();
     _audioRecorder.dispose();
     _beepPlayer.dispose();
   }
