@@ -29,6 +29,7 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
   final _editorService = AudioEditorService();
   bool _isSaving = false;
   bool _isDetectingSilence = false;
+  late PlaybackNotifier _playbackNotifier;
 
   // Waveform controller for visualization
   PlayerController? _waveformController;
@@ -43,6 +44,7 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
   @override
   void initState() {
     super.initState();
+    _playbackNotifier = ref.read(playbackProvider.notifier);
     _startTime = Duration.zero;
     _endTime = widget.recording.duration;
 
@@ -78,7 +80,7 @@ class _TrimScreenState extends ConsumerState<TrimScreen> {
 
   @override
   void dispose() {
-    ref.read(playbackProvider.notifier).stop();
+    _playbackNotifier.stop();
     _waveformController?.dispose();
     super.dispose();
   }

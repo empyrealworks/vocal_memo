@@ -4,6 +4,8 @@ import 'package:vocal_memo/providers/settings_provider.dart';
 import 'package:vocal_memo/services/rating_service.dart';
 
 import '../models/recording_settings.dart';
+import '../providers/auth_provider.dart';
+import 'auth_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -12,6 +14,7 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.watch(settingsProvider.notifier);
+    final authState = ref.watch(authStateProvider);
 
     void updateSettings(RecordingSettings newSettings) {
       notifier.update(newSettings);
@@ -22,6 +25,134 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Account Section
+          const Text(
+            "Account",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+
+          authState.when(
+            data: (user) {
+              if (user == null) {
+                // Not signed in
+                return ListTile(
+                  leading: const Icon(Icons.person_add),
+                  title: const Text("Create Account"),
+                  subtitle: const Text("Sign up for cloud backup & premium features"),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AuthScreen(showBenefits: true),
+                      ),
+                    );
+                  },
+                );
+              } else {
+                // Signed in
+                return Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.account_circle),
+                      title: const Text("Account"),
+                      subtitle: Text(user.email ?? 'Signed in'),
+                      trailing: const Icon(Icons.verified, color: Colors.green),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.logout),
+                      title: const Text("Sign Out"),
+                      onTap: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Sign Out'),
+                            content: const Text('Are you sure you want to sign out?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Sign Out', style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (confirm == true) {
+                          await ref.read(authServiceProvider).signOut();
+                        }
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.delete_forever, color: Colors.red),
+                      title: const Text("Delete Account", style: TextStyle(color: Colors.red)),
+                      subtitle: const Text("Permanently delete your account and data"),
+                      onTap: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Delete Account'),
+                            content: const Text(
+                              'This will permanently delete your account and all cloud data. This action cannot be undone.\n\nLocal recordings will remain on this device.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text(
+                                  'Delete Account',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (confirm == true) {
+                          try {
+                            await ref.read(authServiceProvider).deleteAccount();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Account deleted')),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        }
+                      },
+                    ),
+                  ],
+                );
+              }
+            },
+            loading: () => const ListTile(
+              leading: CircularProgressIndicator(),
+              title: Text("Loading..."),
+            ),
+            error: (_, __) => const ListTile(
+              leading: Icon(Icons.error),
+              title: Text("Error loading account"),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 16),
+
           const Text(
             "Recording Settings",
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),

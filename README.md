@@ -1,538 +1,267 @@
-# Vocal Memo v1.2.0 - Refactored Edition
+# Vocal Memo
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
-![Flutter](https://img.shields.io/badge/flutter-3.9.2-blue)
-![License](https://img.shields.io/badge/license-Proprietary-red)
+**Your Pocket Note Taker** – Record, transcribe, and organize your voice memos on the go with cloud backup.
 
-**Your Pocket Note Taker** – Record, transcribe, and organize voice memos with AI-powered features.
+## Overview
 
-## 🆕 What's New in v1.2.0
+Vocal Memo is a Flutter-based voice recording app with AI transcription, cloud sync, and tiered features. Record ideas instantly, convert speech to text with Gemini AI, and sync your data across devices with Firebase.
 
-### Major Features
-✨ **AI-Powered Transcription** - Background transcription using Google's Gemini 2.0 Flash model  
-🎨 **Audio Waveforms** - Visual waveform display for playback and trimming  
-🎚️ **Interactive Trim UI** - Intuitive dual-handle trimming with visual feedback  
-🔊 **Fixed Recording Beeps** - Beeps no longer captured in audio files  
-🚀 **Performance Improvements** - Auto-dispose pattern prevents memory leaks
-
-### Technical Improvements
-- Replaced synchronous speech-to-text with async Gemini API
-- Implemented proper resource disposal using Riverpod auto-dispose
-- Added waveform visualization using `audio_waveforms` package
-- Redesigned trim UI with interactive waveform selector
-- Comprehensive error handling and logging
-
----
-
-## 📋 Table of Contents
-- [Quick Start](#quick-start)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Setup Guide](#setup-guide)
-- [API Configuration](#api-configuration)
-- [Development](#development)
-- [Testing](#testing)
-- [Documentation](#documentation)
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Flutter SDK 3.9.2+
-- Dart 3.0+
-- Android Studio / VS Code
-- Google Gemini API Key ([Get it here](https://aistudio.google.com/app/apikey))
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/empyrealworks/vocal_memo.git
-   cd vocal_memo
-   ```
-
-2. **Install dependencies**
-   ```bash
-   flutter pub get
-   ```
-
-3. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your GEMINI_API_KEY
-   ```
-
-4. **Run the app**
-   ```bash
-   flutter run
-   ```
-
----
-
-## ✨ Features
+## Features
 
 ### Core Features
-- 🎤 **Instant Recording** - One-tap voice recording with high quality audio
-- 📝 **AI Transcription** - Accurate speech-to-text using Gemini 2.0 Flash
-- 🎵 **Playback Controls** - Speed adjustment (1x, 1.5x, 2x), skip forward/backward
-- 📂 **Organization** - Folders, tags, favorites, and pinning
-- 🔍 **Search & Filter** - Find memos by keywords or metadata
-- 🎙️ **Live Waveform** - Real-time visualization during playback
-- ✂️ **Audio Trimming** - Remove unwanted sections with visual selector
-- 💾 **Local Storage** - All data stored securely on-device
+- 🎤 **Instant Recording** – Tap to record voice memos anytime
+- 🔒 **Background Recording** – Continues recording even when screen is locked
+- 📝 **AI Transcription** – Convert speech to text using Gemini AI (tier-based models)
+- 🎵 **Playback Controls** – Speed adjustment (1x, 1.5x, 2x), skip, rewind
+- 📊 **Audio Waveforms** – Visual playback with tap-to-seek
+- ✂️ **Audio Trimming** – Cut and edit recordings (requires registration)
+- 📄 **Transcript Editor** – View, edit, copy, and share transcriptions
 
-### New in v1.2.0
-- **Background Transcription** - Transcribe after recording without blocking
-- **Waveform Visualization** - See audio amplitude during playback
-- **Interactive Trimming** - Dual-handle selector over waveform
-- **Beep Management** - System beeps no longer in recordings
-- **Memory Leak Prevention** - Automatic resource cleanup
+### Organization
+- 📂 **Smart Organization** – Folders, tags, favorites, and pinning
+- 🔍 **Search & Filter** – Find memos by keywords or metadata
+- 🎨 **Customizable** – Light/Dark themes, configurable audio settings
 
----
+### Cloud & Sync (Requires Account)
+- ☁️ **Cloud Backup** – Never lose your recordings and transcripts
+- 🔄 **Cross-Device Sync** – Access your data on any device
+- 🔐 **Secure Authentication** – Email/password and Google Sign-In
 
-## 🏗️ Architecture
+## User Tiers
 
-### Tech Stack
-| Layer | Technology |
-|-------|-----------|
-| Framework | Flutter 3.9.2 |
-| Language | Dart 3.0+ |
-| State Management | Riverpod 3.0 |
-| Local Storage | Hive |
-| Audio Recording | record 6.1.2 |
-| Audio Playback | audioplayers 6.5.1 |
-| Waveform | audio_waveforms 1.1.0 |
-| Audio Editing | FFmpeg Kit |
-| Transcription | Gemini 2.0 Flash API |
+### 🆓 Unregistered (Local Only)
+- Basic recording and playback
+- Local storage only
+- Limited features (no transcription or trimming)
 
-### Project Structure
-```
-lib/
-├── models/              # Data models
-│   ├── recording.dart
-│   ├── recording_settings.dart
-│   ├── playback_state.dart
-│   └── trim_segment.dart
-├── providers/           # Riverpod state management
-│   ├── recording_provider.dart
-│   ├── transcription_provider.dart
-│   ├── playback_provider.dart
-│   └── settings_provider.dart
-├── screens/            # UI screens
-│   ├── home_screen.dart
-│   ├── live_recording_screen.dart
-│   ├── trim_screen.dart
-│   └── settings_screen.dart
-├── services/           # Business logic
-│   ├── audio_service.dart
-│   ├── gemini_transcription_service.dart
-│   ├── playback_service.dart
-│   ├── audio_editor_service.dart
-│   └── storage_service.dart
-├── widgets/            # Reusable components
-│   ├── expandable_recording_card.dart
-│   ├── playback_controls.dart
-│   └── trim_widgets/
-├── theme/              # App theming
-│   └── app_theme.dart
-├── utils/              # Utilities
-│   └── time_formatter.dart
-└── main.dart           # App entry point
-```
+### ✨ Registered (Free Account)
+- AI transcription with Gemini 2.0 Flash
+- Audio trimming and editing
+- Cloud backup for recordings and settings
+- Cross-device sync
+- Transcript editor
 
-### Design Patterns
-- **Provider Pattern**: Riverpod for state management
-- **Repository Pattern**: Storage service abstracts data layer
-- **Service Pattern**: Services handle business logic
-- **Auto-Dispose**: Automatic resource cleanup
-- **Separation of Concerns**: Clear layer boundaries
+### 💎 Subscribed (Coming Soon)
+- Best AI model (Gemini 3.0 Flash when available)
+- Priority processing
+- Advanced features
+- Unlimited cloud storage
 
----
+## Tech Stack
 
-## ⚙️ Setup Guide
+- **Framework**: Flutter 3.9+
+- **Language**: Dart 3.9+
+- **State Management**: Riverpod
+- **Local Storage**: Hive
+- **Cloud Storage**: Firebase Firestore
+- **Authentication**: Firebase Auth (Email + Google)
+- **Audio Recording**: record package
+- **Transcription**: Gemini AI API
+- **Audio Processing**: FFmpeg
 
-### 1. Environment Configuration
+## Firebase Setup
 
-Create `.env` file in project root:
-```env
-# Required: Get from https://aistudio.google.com/app/apikey
-GEMINI_API_KEY=your_api_key_here
-
-# Optional: Model selection (default: gemini-2.0-flash-exp)
-GEMINI_MODEL=gemini-2.0-flash-exp
-```
-
-**Security Notes:**
-- Never commit `.env` to version control
-- Add `.env` to `.gitignore`
-- Use different keys for dev/prod environments
-- Rotate keys regularly
+### 1. Create Firebase Project
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Create a new project or use existing one
+3. Enable **Authentication** (Email/Password + Google)
+4. Enable **Cloud Firestore**
 
 ### 2. Android Configuration
-
-Add permissions to `android/app/src/main/AndroidManifest.xml`:
-```xml
-<uses-permission android:name="android.permission.RECORD_AUDIO" />
-<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+```bash
+# Download google-services.json from Firebase Console
+# Place it at: android/app/google-services.json
 ```
 
-Set minimum SDK in `android/app/build.gradle`:
+Add to `android/app/build.gradle`:
 ```gradle
-minSdkVersion 24
+plugins {
+    id 'com.google.gms.google-services'
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:32.7.0')
+}
 ```
 
 ### 3. iOS Configuration
-
-Add permissions to `ios/Runner/Info.plist`:
-```xml
-<key>NSMicrophoneUsageDescription</key>
-<string>Vocal Memo needs microphone access to record audio</string>
-<key>NSPhotoLibraryUsageDescription</key>
-<string>Vocal Memo needs access to save recordings</string>
+```bash
+# Download GoogleService-Info.plist from Firebase Console
+# Place it at: ios/Runner/GoogleService-Info.plist
 ```
 
-Minimum iOS version: 12.0
+### 4. Enable Google Sign-In
+1. In Firebase Console → Authentication → Sign-in method
+2. Enable Google provider
+3. Add your SHA-1 fingerprint for Android:
+```bash
+cd android
+./gradlew signingReport
+```
 
----
+## Environment Setup
 
-## 🔑 API Configuration
-
-### Getting Your Gemini API Key
-
-1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Sign in with Google account
-3. Click "Get API Key"
-4. Copy the key to your `.env` file
-
-### API Usage & Limits
-
-**Free Tier:**
-- 15 requests per minute
-- 1,500 requests per day
-- 1 million requests per month
-
-**Rate Limit Handling:**
-The app will show an error if rate limit is exceeded. Wait 60 seconds and retry.
-
-### Supported Models
-- `gemini-2.0-flash-exp` (Recommended - Fast & accurate)
-- `gemini-1.5-flash` (Stable, good for production)
-- `gemini-1.5-pro` (Most accurate, slower)
-
-Configure in `.env`:
+Create `.env` file in project root:
 ```env
+GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-2.0-flash-exp
 ```
 
----
+Get your Gemini API key from: https://aistudio.google.com/app/apikey
 
-## 🛠️ Development
+## Installation
 
-### Running the App
+1. **Clone the repository:**
+```bash
+git clone https://github.com/empyrealworks/vocal_memo.git
+cd vocal_memo
+```
 
-**Debug Mode:**
+2. **Set up Firebase:**
+    - Complete Firebase setup steps above
+    - Add `google-services.json` (Android)
+    - Add `GoogleService-Info.plist` (iOS)
+
+3. **Create `.env` file:**
+```bash
+echo "GEMINI_API_KEY=your_key_here" > .env
+echo "GEMINI_MODEL=gemini-2.0-flash-exp" >> .env
+```
+
+4. **Install dependencies:**
+```bash
+flutter pub get
+```
+
+5. **Run the app:**
 ```bash
 flutter run
 ```
 
-**Profile Mode (for performance testing):**
-```bash
-flutter run --profile
+## Firestore Data Structure
+
+```
+users/
+  {userId}/
+    recordings/
+      {recordingId}/
+        - id, fileName, filePath, createdAt
+        - duration, transcript, isFavorite
+        - isPinned, tags
+    settings/
+      preferences/
+        - autoGainControl, noiseSuppression
+        - themeMode, showWaveform
+        - lastUpdated
 ```
 
-**Release Mode:**
-```bash
-flutter run --release
-```
+## Usage
 
-### Code Quality
+### Registration (Optional but Recommended)
+- **Sign Up**: Tap transcribe or trim → Create account
+- **Benefits**: Cloud backup, better AI, cross-device sync
+- **Free forever**: No credit card required
 
-**Run analyzer:**
-```bash
-flutter analyze
-```
+### Recording
+- Tap **mic button** to start
+- Recording continues when screen locks
+- Tap **stop** to finish
 
-**Format code:**
-```bash
-dart format lib/
-```
+### Transcription (Requires Registration)
+- Expand recording → Tap **transcribe icon**
+- Automatic cloud sync after transcription
 
-**Run tests:**
-```bash
-flutter test
-```
+### Trimming (Requires Registration)
+- Expand recording → Tap **trim icon**
+- Select regions to remove → Save
 
-### Building
+## Version History
 
-**Android APK:**
-```bash
-flutter build apk --release
-```
+### v1.3.0 (Current)
+- ✨ Firebase authentication
+- ☁️ Cloud sync
+- 🎯 Tier-based AI models
+- 🔒 Feature gating
 
-**iOS IPA:**
-```bash
-flutter build ios --release
-```
+### v1.2.1
+- 🔒 Background recording
+- 📝 Transcript editor
+- 🎨 Waveform toggle
 
-### Debugging
+### v1.2.0
+- 🤖 Gemini AI transcription
+- 🎵 Audio waveforms
+- ✂️ Audio trimming
 
-**Enable verbose logging:**
-```dart
-// In main.dart
-void main() {
-  debugPrint('Debug mode enabled');
-  runApp(MyApp());
-}
-```
+## Troubleshooting
 
-**Check API key loaded:**
-```dart
-print('API Key: ${dotenv.env['GEMINI_API_KEY']?.substring(0, 10)}...');
-```
+**Firebase not initialized:**
+- Verify `google-services.json` / `GoogleService-Info.plist` locations
+- Ensure `Firebase.initializeApp()` in `main()`
 
-**Monitor memory:**
-```bash
-flutter run --profile
-# Then open DevTools → Memory tab
-```
+**Google Sign-In fails:**
+- Add SHA-1 to Firebase Console
+- Enable Google provider
+- Update `google-services.json`
 
----
+**Transcription blocked:**
+- Sign up for free account
+- Check internet connection
+- Verify Gemini API key in `.env`
 
-## 🧪 Testing
+## License
 
-### Manual Testing Checklist
-
-#### Recording
-- [ ] Record 10 seconds of audio
-- [ ] Verify no beeps in recording
-- [ ] Test pause/resume
-- [ ] Test with different formats (M4A, WAV, AAC)
-
-#### Transcription
-- [ ] Record clear speech
-- [ ] Tap transcribe button
-- [ ] Verify loading indicator
-- [ ] Verify transcript accuracy
-- [ ] Test with background noise
-- [ ] Test with multiple speakers
-
-#### Waveform
-- [ ] Verify waveform loads
-- [ ] Test seek by tapping waveform
-- [ ] Verify playback indicator moves
-- [ ] Test on long recordings (>5 minutes)
-
-#### Trimming
-- [ ] Open trim screen
-- [ ] Adjust start/end handles
-- [ ] Verify visual feedback
-- [ ] Remove multiple sections
-- [ ] Save trimmed audio
-- [ ] Verify duration correct
-
-### Automated Testing
-
-**Unit Tests:**
-```bash
-flutter test test/unit/
-```
-
-**Widget Tests:**
-```bash
-flutter test test/widget/
-```
-
-**Integration Tests:**
-```bash
-flutter test integration_test/
-```
-
----
-
-## 📚 Documentation
-
-### Key Documents
-- **[REFACTORING_GUIDE.md](REFACTORING_GUIDE.md)** - Complete technical guide
-- **[MIGRATION_CHECKLIST.md](MIGRATION_CHECKLIST.md)** - Step-by-step migration
-- **[CHANGELOG.md](CHANGELOG.md)** - Version history
-
-### API Documentation
-
-#### GeminiTranscriptionService
-```dart
-final service = GeminiTranscriptionService();
-
-// Transcribe single file
-String? transcript = await service.transcribeAudioFile(filePath);
-
-// Transcribe multiple files
-Map<String, String?> results = await service.transcribeBatch(filePaths);
-```
-
-#### AudioService
-```dart
-final service = AudioService();
-
-// Start recording with settings
-await service.startRecording(settings);
-
-// Stop and get recording
-Recording? recording = await service.stopRecording();
-
-// Clean up
-service.dispose();
-```
-
-### Code Examples
-
-**Using transcription provider:**
-```dart
-// In widget
-final transcript = ref.watch(transcribeRecordingProvider(recording));
-
-transcript.when(
-  data: (text) => Text(text ?? 'No transcript'),
-  loading: () => CircularProgressIndicator(),
-  error: (err, stack) => Text('Error: $err'),
-);
-```
-
-**Using waveform:**
-```dart
-PlayerController controller = PlayerController();
-await controller.preparePlayer(
-  path: filePath,
-  shouldExtractWaveform: true,
-);
-
-AudioFileWaveforms(
-  playerController: controller,
-  waveformType: WaveformType.fitWidth,
-);
-```
-
----
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**"GEMINI_API_KEY not found"**
-- Verify `.env` file exists in project root
-- Check API key is valid
-- Restart IDE after creating .env
-
-**"Transcription failed: 429"**
-- Rate limit exceeded
-- Wait 60 seconds and retry
-- Consider upgrading to paid tier
-
-**"Waveform not loading"**
-- Check file path is correct
-- Verify file format supported
-- Try with shorter audio first
-
-**"Memory leak detected"**
-- Verify all controllers disposed
-- Check provider auto-dispose
-- Use DevTools memory profiler
-
-### Debug Commands
-
-```bash
-# Check dependencies
-flutter pub deps
-
-# Clear cache
-flutter clean && flutter pub get
-
-# Rebuild app
-flutter build apk --debug
-
-# View logs
-flutter logs
-```
-
----
-
-## 🤝 Contributing
-
-This is proprietary software. For licensing inquiries, contact:
+Proprietary software by Empyreal Digital Works.  
+Personal use allowed. Commercial redistribution requires written agreement.
 
 📧 **hello@empyrealworks.com**
 
 ---
 
-## 📄 License
+Built with ❤️ using Flutter | Powered by Gemini AI | Secured by Firebase
 
-**Proprietary/Commercial License**
+## v1.3.1 Updates
 
-Vocal Memo is proprietary software developed and owned by Empyreal Digital Works.
+### Firebase Storage
+- Audio files uploaded to Firebase Storage for cloud backup
+- Automatic sync of recordings when authenticated
+- Download capability for cross-device access
 
-- ✅ Personal use allowed
-- ✅ Internal business use allowed
-- ❌ Commercial redistribution prohibited
-- ❌ Modification without permission prohibited
+### Feature Gating & Limits
+- **1-minute limit** for unregistered users on transcription
+- **10 transcriptions per day** for registered users
+- Rate limit badge on transcribe button showing remaining count
+- Reusable feature gate dialog for upgrades
 
-For licensing inquiries: **hello@empyrealworks.com**
+### Search & Filters
+- Advanced search filters: duration, date range, transcript search
+- Filter by recording length (30s, 1m, 5m, 10m, 30m, 1h)
+- Date range picker (from/to)
+- Transcript search (registered users only)
+- Active filter badge on search bar
 
----
+### Bug Fixes
+- Fixed Riverpod dispose error in trim screen
+- Fixed auth state not refreshing after sign in/out
+- Improved auth provider reactivity with force re-evaluation
 
-## 🙏 Acknowledgments
+### Dependencies Added
+```yaml
+firebase_storage: ^12.3.4
+```
 
-### Technologies
-- Flutter Team for the amazing framework
-- Google for Gemini API
-- FFmpeg for audio processing
-- Riverpod for state management
-- Hive for local storage
+### Firestore Security Rules
+```javascript
+// Add to Firestore Rules
+match /users/{userId}/usage/{document} {
+  allow read, write: if request.auth.uid == userId;
+}
+```
 
-### Packages
-- `audio_waveforms` by Usman Jamshed
-- `audioplayers` by Blue Fire
-- `record` by Llfbandit
-- `google_generative_ai` by Google
-
----
-
-## 📞 Support
-
-### Get Help
-- 📧 Email: **hello@empyrealworks.com**
-- 📝 GitHub Issues: [Report a bug](https://github.com/empyrealworks/vocal_memo/issues)
-- 📚 Documentation: Check [REFACTORING_GUIDE.md](REFACTORING_GUIDE.md)
-
-### Feedback
-We love hearing from you! Share your thoughts:
-- Rate the app in store
-- Email us feature requests
-- Report bugs via GitHub Issues
-
----
-
-## 🗺️ Roadmap
-
-### v1.3.0 (Q2 2026)
-- [ ] Cached waveform data
-- [ ] Batch transcription UI
-- [ ] Custom transcription languages
-- [ ] Export transcripts (PDF/TXT)
-
-### v1.4.0 (Q3 2026)
-- [ ] Speaker diarization
-- [ ] Timestamp markers
-- [ ] Cloud backup (optional)
-- [ ] Collaboration features
-
-### v2.0.0 (Q4 2026)
-- [ ] Offline transcription
-- [ ] Real-time transcription option
-- [ ] AI-powered audio enhancement
-- [ ] Advanced search (semantic)
-
----
-
-**Built with ❤️ by Empyreal Digital Works**  
-**Version 1.2.0** | **March 2026**
+### Firebase Storage Rules
+```javascript
+// Add to Storage Rules
+match /users/{userId}/{allPaths=**} {
+  allow read, write: if request.auth.uid == userId;
+}
+```

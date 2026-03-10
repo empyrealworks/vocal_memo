@@ -20,10 +20,7 @@ import '../providers/recording_provider.dart';
 class TranscriptViewerScreen extends ConsumerStatefulWidget {
   final Recording recording;
 
-  const TranscriptViewerScreen({
-    Key? key,
-    required this.recording,
-  }) : super(key: key);
+  const TranscriptViewerScreen({super.key, required this.recording});
 
   @override
   ConsumerState<TranscriptViewerScreen> createState() =>
@@ -72,9 +69,11 @@ class _TranscriptViewerScreenState
     }
 
     try {
-      await ref.read(recordingProvider.notifier).updateRecording(
-        widget.recording.copyWith(transcript: newTranscript),
-      );
+      await ref
+          .read(recordingProvider.notifier)
+          .updateRecording(
+            widget.recording.copyWith(transcript: newTranscript),
+          );
 
       setState(() {
         _hasChanges = false;
@@ -148,9 +147,11 @@ class _TranscriptViewerScreenState
 
   Future<void> _shareTranscript() async {
     try {
-      await Share.share(
-        _textController.text,
-        subject: 'Transcript: ${widget.recording.displayTitle}',
+      await SharePlus.instance.share(
+        ShareParams(
+          text: _textController.text,
+          subject: 'Transcript: ${widget.recording.displayTitle}',
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -176,10 +177,7 @@ class _TranscriptViewerScreenState
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text(
-                'Discard',
-                style: TextStyle(color: Colors.red),
-              ),
+              child: const Text('Discard', style: TextStyle(color: Colors.red)),
             ),
           ],
         ),
@@ -323,11 +321,7 @@ class _TranscriptViewerScreenState
             ),
 
             // Transcript editor/viewer
-            Expanded(
-              child: _isEditing
-                  ? _buildEditor()
-                  : _buildViewer(),
-            ),
+            Expanded(child: _isEditing ? _buildEditor() : _buildViewer()),
           ],
         ),
       ),
@@ -364,9 +358,7 @@ class _TranscriptViewerScreenState
       padding: const EdgeInsets.all(16),
       child: SelectableText(
         _textController.text,
-        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-          height: 1.6,
-        ),
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
       ),
     );
   }

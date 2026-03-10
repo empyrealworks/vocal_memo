@@ -1,0 +1,32 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "vocal-memo-app",
+          "appId": "1:375899553715:android:5fad5a194a953a097915c6",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "vocal-memo-app",
+          "configurations": {
+            "android": "1:375899553715:android:5fad5a194a953a097915c6",
+            "ios": "1:375899553715:ios:a086939e7ca44db47915c6",
+            "web": "1:375899553715:web:ee5b95c5d90455057915c6"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  }
+}

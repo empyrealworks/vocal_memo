@@ -1,6 +1,7 @@
 // lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:vocal_memo/widgets/search_filters_modal.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
 import '../providers/recording_provider.dart';
@@ -18,23 +19,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _searchQuery = '';
   String _selectedFilter = 'All';
   final List<String> _filters = ['All', 'Favorites', 'Pinned'];
+  SearchFilters _searchFilters = SearchFilters();
 
   @override
   Widget build(BuildContext context) {
     final recordings = ref.watch(recordingProvider);
 
     List<Recording> filtered = recordings;
+
+    // Apply category filter
     if (_selectedFilter == 'Favorites') {
       filtered = recordings.where((r) => r.isFavorite).toList();
     } else if (_selectedFilter == 'Pinned') {
       filtered = recordings.where((r) => r.isPinned).toList();
     }
 
+    // Apply search query
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((r) {
         final query = _searchQuery.toLowerCase();
-        return r.displayTitle.toLowerCase().contains(query) ||
-            (r.transcript?.toLowerCase().contains(query) ?? false);
+        final titleMatch = r.displayTitle.toLowerCase().contains(query);
+        final transcriptMatch = _searchFilters.searchTranscripts &&
+            r.transcript != null &&
+            r.transcript!.toLowerCase().contains(query);
+        return titleMatch || transcriptMatch;
+      }).toList();
+    }
+
+    // Apply advanced filters
+    if (_searchFilters.hasActiveFilters) {
+      filtered = filtered.where((r) {
+        // Duration filter
+        if (_searchFilters.minDuration != null &&
+            r.duration < _searchFilters.minDuration!) {
+          return false;
+        }
+        if (_searchFilters.maxDuration != null &&
+            r.duration > _searchFilters.maxDuration!) {
+          return false;
+        }
+
+        // Date filter
+        if (_searchFilters.fromDate != null) {
+          final fromDate = DateTime(
+            _searchFilters.fromDate!.year,
+            _searchFilters.fromDate!.month,
+            _searchFilters.fromDate!.day,
+          );
+          if (r.createdAt.isBefore(fromDate)) {
+            return false;
+          }
+        }
+        if (_searchFilters.toDate != null) {
+          final toDate = DateTime(
+            _searchFilters.toDate!.year,
+            _searchFilters.toDate!.month,
+            _searchFilters.toDate!.day,
+            23,
+            59,
+            59,
+          );
+          if (r.createdAt.isAfter(toDate)) {
+            return false;
+          }
+        }
+
+        return true;
       }).toList();
     }
 
@@ -57,6 +107,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: SearchBar(
               onChanged: (value) => setState(() => _searchQuery = value),
               hintText: 'Search memos...',
+              onFilterTap: () async {
+                final result = await showModalBottomSheet<SearchFilters>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (context) => SearchFiltersModal(
+                    initialFilters: _searchFilters,
+                  ),
+                );
+                if (result != null) {
+                  setState(() => _searchFilters = result);
+                }
+              },
+              hasActiveFilters: _searchFilters.hasActiveFilters,
             ),
           ),
           SingleChildScrollView(
@@ -147,12 +210,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 class SearchBar extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final String hintText;
+  final VoidCallback onFilterTap;
+  final bool hasActiveFilters;
 
   const SearchBar({
-    super.key,
+    Key? key,
     required this.onChanged,
     required this.hintText,
-  });
+    required this.onFilterTap,
+    this.hasActiveFilters = false,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -160,9 +227,16 @@ class SearchBar extends StatelessWidget {
       onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle:  TextStyle(color: AppTheme.darkText),
+        hintStyle: const TextStyle(color: AppTheme.darkText),
         prefixIcon: const Icon(Icons.search, color: AppTheme.teal),
-        suffixIcon: const Icon(Icons.tune, color: AppTheme.teal),
+        suffixIcon: IconButton(
+          icon: Badge(
+            isLabelVisible: hasActiveFilters,
+            backgroundColor: AppTheme.orange,
+            child: const Icon(Icons.tune, color: AppTheme.teal),
+          ),
+          onPressed: onFilterTap,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppTheme.mediumGray),

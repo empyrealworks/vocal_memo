@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod/legacy.dart';
 import '../services/gemini_transcription_service.dart';
 import '../models/recording.dart';
+import 'auth_provider.dart';
 import 'recording_provider.dart';
 
 /// Provider for Gemini transcription service
@@ -55,22 +56,36 @@ class TranscriptionNotifier extends StateNotifier<TranscriptionState> {
       // Update state to show transcribing
       state = const TranscriptionState(isTranscribing: true);
 
-      if (kDebugMode) {
-        print('🎯 Transcribing recording: ${recording.id}');
-      }
+      // Get the appropriate model for user's tier
+      final authService = _ref.read(authServiceProvider);
+      final model = authService.geminiModel;
+
+      print('🎯 Transcribing with model: $model (tier: ${authService.userTier})');
+      print('🎙️ Recording: ${recording.id}');
+
       final transcript = await _service.transcribeAudioFile(
         recording.filePath,
+        modelName: model,
       );
 
       if (transcript != null && transcript.isNotEmpty) {
         // Update the recording with transcript
         final recordingNotifier = _ref.read(recordingProvider.notifier);
-        await recordingNotifier.updateRecording(
-          recording.copyWith(
-            transcript: transcript,
-            isTranscribing: false,
-          ),
+        final updatedRecording = recording.copyWith(
+          transcript: transcript,
+          isTranscribing: false,
         );
+
+        await recordingNotifier.updateRecording(updatedRecording);
+
+        // Sync to cloud if user is authenticated
+        if (authService.isAuthenticated) {
+          if (kDebugMode) {
+            print('☁️ Syncing transcript to cloud...');
+          }
+          final syncService = _ref.read(cloudSyncServiceProvider);
+          await syncService.syncRecordingToCloud(updatedRecording);
+        }
 
         // Update state
         state = const TranscriptionState(isTranscribing: false);

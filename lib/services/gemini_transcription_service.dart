@@ -1,5 +1,6 @@
 // lib/services/gemini_transcription_service.dart
 import 'dart:io';
+import 'package:envied/envied.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:vocal_memo/env/env.dart';
@@ -23,7 +24,7 @@ class GeminiTranscriptionService {
       );
     }
 
-    final modelName = 'gemini-2.5-flash-lite';
+    final modelName = Env.geminiModel;
     _model = GenerativeModel(
       model: modelName,
       apiKey: _apiKey,
@@ -38,7 +39,7 @@ class GeminiTranscriptionService {
   ///
   /// Throws [FileSystemException] if file doesn't exist
   /// Throws [Exception] for API errors
-  Future<String?> transcribeAudioFile(String audioFilePath) async {
+  Future<String?> transcribeAudioFile(String audioFilePath, {String? modelName}) async {
     try {
       if (kDebugMode) {
         print('🎤 Starting transcription for: $audioFilePath');
@@ -76,6 +77,13 @@ class GeminiTranscriptionService {
               'formatting, or explanations. If the audio is unclear or empty, '
               'return "Unable to transcribe audio".'
       );
+
+      // Use custom model if provided, otherwise use default
+      final model = modelName != null
+          ? GenerativeModel(model: modelName, apiKey: _apiKey)
+          : _model;
+
+      print('🤖 Using model: ${modelName ?? envied.name}');
 
       // Send request to Gemini
       if (kDebugMode) {
@@ -173,5 +181,5 @@ class GeminiTranscriptionService {
   bool get isConfigured => _apiKey.isNotEmpty;
 
   /// Get the current model name
-  // String get modelName => _model.model;
+  // String get modelName => _model._model;
 }
