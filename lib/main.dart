@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vocal_memo/providers/auth_provider.dart';
-import 'package:vocal_memo/providers/onboarding_provider.dart';
 import 'package:vocal_memo/providers/recording_provider.dart';
 import 'package:vocal_memo/providers/settings_provider.dart';
 import 'package:vocal_memo/screens/settings_screen.dart';

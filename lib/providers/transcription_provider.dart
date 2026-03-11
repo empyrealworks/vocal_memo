@@ -2,6 +2,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod/legacy.dart';
+import '../services/encryption _service.dart';
 import '../services/gemini_transcription_service.dart';
 import '../models/recording.dart';
 import 'auth_provider.dart';
@@ -9,7 +10,9 @@ import 'recording_provider.dart';
 
 /// Provider for Gemini transcription service
 final geminiTranscriptionServiceProvider = Provider<GeminiTranscriptionService>((ref) {
-  return GeminiTranscriptionService();
+  // Watch the gemini model provider
+  final modelName = ref.watch(geminiModelProvider);
+  return GeminiTranscriptionService(modelName: modelName);
 });
 
 /// State for tracking transcription progress
@@ -60,8 +63,12 @@ class TranscriptionNotifier extends StateNotifier<TranscriptionState> {
       final authService = _ref.read(authServiceProvider);
       final model = authService.geminiModel;
 
-      print('🎯 Transcribing with model: $model (tier: ${authService.userTier})');
-      print('🎙️ Recording: ${recording.id}');
+      if (kDebugMode) {
+        print('🎯 Transcribing with model: $model (tier: ${authService.userTier})');
+      }
+      if (kDebugMode) {
+        print('🎙️ Recording: ${recording.id}');
+      }
 
       final transcript = await _service.transcribeAudioFile(
         recording.filePath,
@@ -69,10 +76,12 @@ class TranscriptionNotifier extends StateNotifier<TranscriptionState> {
       );
 
       if (transcript != null && transcript.isNotEmpty) {
+        // 🔐 ENCRYPT BEFORE SAVING
+        final encryptedTranscript = EncryptionService.encrypt(transcript);
         // Update the recording with transcript
         final recordingNotifier = _ref.read(recordingProvider.notifier);
         final updatedRecording = recording.copyWith(
-          transcript: transcript,
+          transcript: encryptedTranscript,
           isTranscribing: false,
         );
 

@@ -87,6 +87,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       await authService.signInWithGoogle();
 
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sign in successful!'),
+            backgroundColor: AppTheme.teal,
+          ),
+        );
         Navigator.pop(context);
       }
     } catch (e) {

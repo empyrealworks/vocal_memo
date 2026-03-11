@@ -15,7 +15,7 @@ class GeminiTranscriptionService {
   late final GenerativeModel _model;
   final String _apiKey;
 
-  GeminiTranscriptionService()
+  GeminiTranscriptionService({required String modelName})
       : _apiKey = Env.geminiApiKey{
     if (_apiKey.isEmpty) {
       throw Exception(
@@ -24,7 +24,6 @@ class GeminiTranscriptionService {
       );
     }
 
-    final modelName = Env.geminiModel;
     _model = GenerativeModel(
       model: modelName,
       apiKey: _apiKey,
@@ -78,12 +77,9 @@ class GeminiTranscriptionService {
               'return "Unable to transcribe audio".'
       );
 
-      // Use custom model if provided, otherwise use default
-      final model = modelName != null
-          ? GenerativeModel(model: modelName, apiKey: _apiKey)
-          : _model;
-
-      print('🤖 Using model: ${modelName ?? envied.name}');
+      if (kDebugMode) {
+        print('🤖 Using model: ${modelName ?? envied.name}');
+      }
 
       // Send request to Gemini
       if (kDebugMode) {

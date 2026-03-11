@@ -56,7 +56,7 @@ dependencies:
 
   # Wake lock for background recording
   wakelock_plus: ^1.2.8
-  firebase_storage: ^12.4.10
+  encrypt: ^5.0.3
 
 dev_dependencies:
   flutter_launcher_icons: "^0.14.4"

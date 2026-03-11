@@ -30,11 +30,11 @@ class AuthService {
   String get geminiModel {
     switch (userTier) {
       case UserTier.unregistered:
-        return 'gemini-2.0-flash-exp'; // Basic
+        return 'gemini-2.0-flash-lite'; // Basic
       case UserTier.registered:
-        return 'gemini-2.0-flash-exp'; // Better (will be 2.5 when available)
+        return 'gemini-2.5-flash-lite'; // Better
       case UserTier.subscribed:
-        return 'gemini-2.0-flash-exp'; // Best (will be 3.0 when available)
+        return 'gemini-3.1-flash-lite'; // Best
     }
   }
 

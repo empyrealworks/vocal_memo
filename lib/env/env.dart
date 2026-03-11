@@ -9,4 +9,6 @@ abstract class Env {
   static final String geminiApiKey = _Env.geminiApiKey;
   @EnviedField(varName: 'GEMINI_MODEL', obfuscate: true)
   static final String geminiModel = _Env.geminiModel;
+  @EnviedField(varName: 'ENCRYPTION_KEY', obfuscate: true)
+  static final String encryptionKey = _Env.encryptionKey;
 }

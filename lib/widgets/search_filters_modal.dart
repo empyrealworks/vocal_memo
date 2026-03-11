@@ -47,9 +47,9 @@ class SearchFiltersModal extends ConsumerStatefulWidget {
   final SearchFilters initialFilters;
 
   const SearchFiltersModal({
-    Key? key,
+    super.key,
     required this.initialFilters,
-  }) : super(key: key);
+  });
 
   @override
   ConsumerState<SearchFiltersModal> createState() =>
@@ -80,8 +80,8 @@ class _SearchFiltersModalState extends ConsumerState<SearchFiltersModal> {
 
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
@@ -172,7 +172,8 @@ class _SearchFiltersModalState extends ConsumerState<SearchFiltersModal> {
                   );
                 },
                 selectedColor: AppTheme.teal,
-                backgroundColor: AppTheme.lightGray,
+                backgroundColor: Theme.of(context).cardColor,
+                side: BorderSide(color: AppTheme.mediumGray),
               );
             }).toList(),
           ),
@@ -208,7 +209,7 @@ class _SearchFiltersModalState extends ConsumerState<SearchFiltersModal> {
               });
             }
                 : null,
-            activeColor: AppTheme.teal,
+            activeThumbColor: AppTheme.teal,
           ),
 
           const SizedBox(height: 16),
@@ -226,6 +227,9 @@ class _SearchFiltersModalState extends ConsumerState<SearchFiltersModal> {
               Expanded(
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today, size: 18),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: AppTheme.mediumGray, width: 2),
+                  ),
                   label: Text(
                     _filters.fromDate != null
                         ? _formatDate(_filters.fromDate!)
@@ -250,6 +254,9 @@ class _SearchFiltersModalState extends ConsumerState<SearchFiltersModal> {
               Expanded(
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today, size: 18),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: AppTheme.mediumGray, width: 2),
+                  ),
                   label: Text(
                     _filters.toDate != null
                         ? _formatDate(_filters.toDate!)

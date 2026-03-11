@@ -214,12 +214,12 @@ class SearchBar extends StatelessWidget {
   final bool hasActiveFilters;
 
   const SearchBar({
-    Key? key,
+    super.key,
     required this.onChanged,
     required this.hintText,
     required this.onFilterTap,
     this.hasActiveFilters = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -250,7 +250,7 @@ class SearchBar extends StatelessWidget {
           borderSide: const BorderSide(color: AppTheme.teal, width: 2),
         ),
         filled: true,
-        fillColor: AppTheme.lightGray,
+        fillColor: Theme.of(context).canvasColor,
       ),
     );
   }

@@ -153,6 +153,7 @@ class CloudSyncService {
           .collection('recordings');
 
       for (final recording in recordings) {
+
         batch.set(
           recordingsRef.doc(recording.id),
           recording.toJson(),

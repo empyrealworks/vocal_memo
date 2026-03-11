@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import '../services/encryption _service.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
 import '../providers/recording_provider.dart';
@@ -37,7 +38,7 @@ class _TranscriptViewerScreenState
   void initState() {
     super.initState();
     _textController = TextEditingController(
-      text: widget.recording.transcript ?? '',
+      text: widget.recording.displayTranscript,
     );
     _textController.addListener(_onTextChanged);
   }
@@ -50,7 +51,7 @@ class _TranscriptViewerScreenState
   }
 
   void _onTextChanged() {
-    if (!_hasChanges && _textController.text != widget.recording.transcript) {
+    if (!_hasChanges && _textController.text != widget.recording.displayTranscript) {
       setState(() => _hasChanges = true);
     }
   }
@@ -69,10 +70,12 @@ class _TranscriptViewerScreenState
     }
 
     try {
+      // Encrypt the new transcript
+      final encryptedTranscript = EncryptionService.encrypt(newTranscript);
       await ref
           .read(recordingProvider.notifier)
           .updateRecording(
-            widget.recording.copyWith(transcript: newTranscript),
+            widget.recording.copyWith(transcript: encryptedTranscript),
           );
 
       setState(() {

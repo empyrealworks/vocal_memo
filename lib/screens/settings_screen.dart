@@ -5,6 +5,7 @@ import 'package:vocal_memo/services/rating_service.dart';
 
 import '../models/recording_settings.dart';
 import '../providers/auth_provider.dart';
+import '../theme/app_theme.dart';
 import 'auth_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -65,19 +66,83 @@ class SettingsScreen extends ConsumerWidget {
                       onTap: () async {
                         final confirm = await showDialog<bool>(
                           context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Sign Out'),
-                            content: const Text('Are you sure you want to sign out?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Cancel'),
+                          builder: (context) => Dialog(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Icon
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.orange.withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.logout,
+                                      size: 48,
+                                      color: AppTheme.orange,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  // Title
+                                  Text(
+                                    'Sign Out',
+                                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                      fontWeight: FontWeight.bold),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Message
+                                  Text(
+                                    'Are you sure you want to sign out?',
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                                    textAlign: TextAlign.center,
+                                  ),
+
+                                  const SizedBox(height: 24),
+
+                                  // Action buttons
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 2,
+                                        child: OutlinedButton(
+                                          onPressed: () => Navigator.pop(context, false),
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                            side: const BorderSide(color: AppTheme.mediumGray),
+                                          ),
+                                          child: const Text('Cancel'),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: ElevatedButton(
+                                          onPressed: () => Navigator.pop(context, true),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppTheme.orange,
+                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                          ),
+                                          child: const Text(
+                                            'Sign Out',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ]
                               ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text('Sign Out', style: TextStyle(color: Colors.red)),
-                              ),
-                            ],
+                            ),
                           ),
                         );
 

@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/rate_limit_service.dart';
-import '../services/firebase_storage_service.dart';
-
 final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService();
 });
@@ -20,11 +18,6 @@ final rateLimitServiceProvider = Provider<RateLimitService>((ref) {
   return RateLimitService(authService);
 });
 
-final firebaseStorageServiceProvider = Provider<FirebaseStorageService>((ref) {
-  final authService = ref.watch(authServiceProvider);
-  return FirebaseStorageService(authService);
-});
-
 final authStateProvider = StreamProvider<User?>((ref) {
   final authService = ref.watch(authServiceProvider);
   return authService.authStateChanges;
@@ -35,6 +28,13 @@ final userTierProvider = Provider<UserTier>((ref) {
   ref.watch(authStateProvider);
   final authService = ref.watch(authServiceProvider);
   return authService.userTier;
+});
+
+final geminiModelProvider = Provider<String>((ref) {
+  // Force re-evaluation when auth state changes
+  ref.watch(authStateProvider);
+  final authService = ref.watch(authServiceProvider);
+  return authService.geminiModel;
 });
 
 final canTranscribeProvider = Provider<bool>((ref) {

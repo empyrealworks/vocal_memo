@@ -1,5 +1,6 @@
 // lib/models/recording.dart
 import 'package:intl/intl.dart';
+import 'package:vocal_memo/services/encryption%20_service.dart';
 
 class Recording {
   final String id;
@@ -44,6 +45,11 @@ class Recording {
   String get formattedDate => DateFormat('MMM d, yyyy').format(createdAt);
 
   String get formattedTime => DateFormat('h:mm a').format(createdAt);
+
+  String get displayTranscript {
+    if (transcript == null || transcript!.isEmpty) return '';
+    return EncryptionService.decrypt(transcript!);
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,

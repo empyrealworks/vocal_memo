@@ -1,5 +1,6 @@
 // lib/services/rate_limit_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'auth_service.dart';
 
 class RateLimitService {
@@ -30,6 +31,20 @@ class RateLimitService {
           .get();
 
       if (!doc.exists) {
+        await _firestore
+            .collection('users')
+            .doc(_userId)
+            .collection('usage')
+            .doc('transcriptions')
+            .set({
+              'count': 0,
+              'limit': DAILY_LIMIT,
+              'remaining': DAILY_LIMIT,
+              'canTranscribe': true,
+              'lastReset': Timestamp.now(),
+              'lastUsed': Timestamp.now(),
+            }, SetOptions(merge: true));
+
         return {
           'count': 0,
           'limit': DAILY_LIMIT,
@@ -65,7 +80,9 @@ class RateLimitService {
         'resetAt': _getNextResetTime(),
       };
     } catch (e) {
-      print('Error getting usage: $e');
+      if (kDebugMode) {
+        print('Error getting usage: $e');
+      }
       return {
         'count': 0,
         'limit': DAILY_LIMIT,
@@ -91,14 +108,16 @@ class RateLimitService {
           .collection('usage')
           .doc('transcriptions')
           .set({
-        'count': FieldValue.increment(1),
-        'lastReset': Timestamp.now(),
-        'lastUsed': Timestamp.now(),
-      }, SetOptions(merge: true));
+            'count': FieldValue.increment(1),
+            'lastReset': Timestamp.now(),
+            'lastUsed': Timestamp.now(),
+          }, SetOptions(merge: true));
 
       return true;
     } catch (e) {
-      print('Error incrementing usage: $e');
+      if (kDebugMode) {
+        print('Error incrementing usage: $e');
+      }
       return false;
     }
   }
@@ -113,12 +132,11 @@ class RateLimitService {
           .doc(_userId)
           .collection('usage')
           .doc('transcriptions')
-          .set({
-        'count': 0,
-        'lastReset': Timestamp.now(),
-      });
+          .set({'count': 0, 'lastReset': Timestamp.now()});
     } catch (e) {
-      print('Error resetting count: $e');
+      if (kDebugMode) {
+        print('Error resetting count: $e');
+      }
     }
   }
 

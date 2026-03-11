@@ -9,7 +9,6 @@ import 'package:vocal_memo/screens/transcript_viewer_screen.dart';
 import 'dart:io';
 import '../providers/settings_provider.dart';
 import '../providers/transcription_provider.dart';
-import '../screens/auth_screen.dart';
 import '../screens/trim_screen.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
@@ -125,31 +124,108 @@ class _ExpandableRecordingCardState
   }
 
   Future<void> _transcribeRecording() async {
-    try {
-      // Show loading indicator
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-              SizedBox(width: 16),
-              Text('Transcribing audio...'),
-            ],
-          ),
-          duration: Duration(seconds: 30),
-        ),
-      );
+    final canTranscribe = ref.read(canTranscribeProvider);
+    final isAuthenticated = ref.read(authStateProvider).value != null;
 
-      // Trigger transcription using the StateNotifier
-      await ref
-          .read(transcriptionNotifierProvider(widget.recording.id).notifier)
+    // Check 1-minute limit for unregistered users
+    if (!isAuthenticated && widget.recording.duration.inSeconds > 60) {
+      await FeatureGateDialog.show(
+        context,
+        title: 'Transcription Limit',
+        message: 'Free users can only transcribe recordings up to 1 minute long.',
+        benefits: [
+          'Unlimited transcription length',
+          'Better AI model (Gemini 2.5)',
+          'Cloud backup & sync',
+          'Audio trimming tools',
+        ],
+      );
+      return;
+    }
+
+    // Check if user can transcribe (registered users only)
+    if (!canTranscribe) {
+      await FeatureGateDialog.show(
+        context,
+        title: 'Transcription Requires Account',
+        message: 'Sign up for free to transcribe your recordings with AI.',
+        benefits: [
+          'AI transcription with Gemini',
+          'Cloud backup & sync',
+          'Audio trimming tools',
+          'Cross-device access',
+        ],
+      );
+      return;
+    }
+
+    // Check rate limit for registered users
+    final usage = await ref.read(dailyUsageProvider.future);
+    if (!(usage['canTranscribe'] as bool)) {
+      final resetTime = ref.read(rateLimitServiceProvider).getTimeUntilReset();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Daily limit reached (10/day). Resets in $resetTime',
+              style: TextStyle(
+                color: AppTheme.lightGray,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      // Increment usage count
+      final rateLimitService = ref.read(rateLimitServiceProvider);
+      final incremented = await rateLimitService.incrementUsage();
+
+      if (!incremented) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not increment usage. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Refresh usage provider to update badge
+      ref.invalidate(dailyUsageProvider);
+
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 16),
+                Text('Transcribing audio...'),
+              ],
+            ),
+            duration: Duration(seconds: 30),
+          ),
+        );
+      }
+
+      // Trigger transcription
+      await ref.read(transcriptionNotifierProvider(widget.recording.id).notifier)
           .transcribe(widget.recording);
 
       if (mounted) {
@@ -551,9 +627,12 @@ class _ExpandableRecordingCardState
                       }
                     },
                     selectedColor: AppTheme.teal,
-                    backgroundColor: AppTheme.lightGray,
+                    backgroundColor: Theme.of(context).cardColor,
+                    side: BorderSide(
+                      color: isSelected ? AppTheme.teal : AppTheme.mediumGray,
+                    ),
                     labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : AppTheme.darkText,
+                      color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyMedium?.color,
                       fontWeight: FontWeight.w600,
                       fontSize: 11,
                     ),
@@ -614,13 +693,13 @@ class _ExpandableRecordingCardState
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        widget.recording.transcript!,
+                        widget.recording.displayTranscript,
                         style: Theme.of(context).textTheme.bodyMedium,
                         maxLines: 4,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (widget.recording.transcript!.split('\n').length > 4 ||
-                          widget.recording.transcript!.length > 200)
+                      if (widget.recording.displayTranscript.split('\n').length > 4 ||
+                          widget.recording.displayTranscript.length > 200)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(
