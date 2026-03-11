@@ -256,6 +256,33 @@ class AudioService {
     }
   }
 
+  /// Stops the recorder and deletes the partial file without saving a Recording.
+  /// Used when the user chooses "Discard" on the exit dialog.
+  Future<void> discardRecording() async {
+    try {
+      final path = await _audioRecorder.stop();
+      await WakelockPlus.disable();
+
+      // Delete the partial file
+      if (path != null) {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      }
+
+      // Reset state
+      _currentRecordingPath = null;
+      _recordingStartTime = null;
+      _pauseStartTime = null;
+      _accumulatedDuration = Duration.zero;
+      _isPaused = false;
+
+      if (kDebugMode) print('🗑️ Recording discarded');
+    } catch (e) {
+      await WakelockPlus.disable();
+      if (kDebugMode) print('Error discarding recording: $e');
+    }
+  }
+
   /// Delete a recording file
   Future<void> deleteRecording(String filePath) async {
     try {

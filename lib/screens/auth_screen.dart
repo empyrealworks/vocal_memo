@@ -1,6 +1,7 @@
 // lib/screens/auth_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/recording_provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/auth_provider.dart';
 
@@ -58,6 +59,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           _emailController.text.trim(),
           _passwordController.text,
         );
+        final recordingService = ref.read(recordingProvider.notifier);
+        await recordingService.restoreFromCloud();
 
         if (mounted) {
           Navigator.pop(context);
@@ -85,6 +88,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     try {
       final authService = ref.read(authServiceProvider);
       await authService.signInWithGoogle();
+
+      final recordingService = ref.read(recordingProvider.notifier);
+      await recordingService.restoreFromCloud();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

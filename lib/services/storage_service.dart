@@ -98,4 +98,22 @@ class  StorageService {
   static Future<void> setOnboardingComplete(bool value) async {
     await _onboardingBox.put('onboarding_complete', value);
   }
+
+  // Home screen tutorial (spotlight walkthrough)
+  static bool getHomeTutorialSeen() {
+    return _onboardingBox.get('home_tutorial_seen', defaultValue: false);
+  }
+
+  static Future<void> setHomeTutorialSeen(bool value) async {
+    await _onboardingBox.put('home_tutorial_seen', value);
+  }
+
+  // In-card feature hints (first time a card is expanded)
+  static bool getCardHintsSeen() {
+    return _onboardingBox.get('card_hints_seen', defaultValue: false);
+  }
+
+  static Future<void> setCardHintsSeen(bool value) async {
+    await _onboardingBox.put('card_hints_seen', value);
+  }
 }

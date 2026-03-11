@@ -17,6 +17,9 @@ class Recording {
   bool isTranscribing;
   List<double>? waveformData = [];
 
+  /// Firebase Storage download URL for the encrypted audio backup.
+  /// Null until the user manually triggers a backup.
+  final String? backupUrl;
 
   Recording({
     required this.id,
@@ -32,9 +35,14 @@ class Recording {
     this.transcript,
     this.isTranscribing = false,
     this.waveformData,
+    this.backupUrl,
   });
 
-  String get displayTitle => title ?? 'Memo ${DateFormat('MMM d, h:mm a').format(createdAt)}';
+  /// Whether this recording has been backed up to Firebase Storage.
+  bool get isBackedUp => backupUrl != null && backupUrl!.isNotEmpty;
+
+  String get displayTitle =>
+      title ?? 'Memo ${DateFormat('MMM d, h:mm a').format(createdAt)}';
 
   String get formattedDuration {
     final minutes = duration.inMinutes;
@@ -65,6 +73,7 @@ class Recording {
     'transcript': transcript,
     'isTranscribing': isTranscribing,
     'waveformData': waveformData,
+    'backupUrl': backupUrl,
   };
 
   factory Recording.fromJson(Map<String, dynamic> json) => Recording(
@@ -80,7 +89,9 @@ class Recording {
     folderId: json['folderId'] as String?,
     transcript: json['transcript'] as String?,
     isTranscribing: json['isTranscribing'] as bool? ?? false,
-    waveformData: List<double>.from(json['waveformData'] as List? ?? []),
+    waveformData:
+    List<double>.from(json['waveformData'] as List? ?? []),
+    backupUrl: json['backupUrl'] as String?,
   );
 
   Recording copyWith({
@@ -97,6 +108,8 @@ class Recording {
     String? transcript,
     bool? isTranscribing,
     List<double>? waveformData,
+    String? backupUrl,
+    bool clearBackupUrl = false,
   }) =>
       Recording(
         id: id ?? this.id,
@@ -112,5 +125,6 @@ class Recording {
         transcript: transcript ?? this.transcript,
         isTranscribing: isTranscribing ?? this.isTranscribing,
         waveformData: waveformData,
+        backupUrl: clearBackupUrl ? null : (backupUrl ?? this.backupUrl),
       );
 }

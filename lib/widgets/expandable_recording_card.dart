@@ -10,6 +10,7 @@ import 'dart:io';
 import '../providers/settings_provider.dart';
 import '../providers/transcription_provider.dart';
 import '../screens/trim_screen.dart';
+import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
 import '../providers/recording_provider.dart';
@@ -33,6 +34,14 @@ class _ExpandableRecordingCardState
   late TextEditingController _titleController;
   PlayerController? _waveformController;
 
+  // Backup state
+  bool _isBackingUp = false;
+  double _backupProgress = 0.0;
+  String? _backupError;
+
+  // First-expand feature hints
+  bool _showCardHints = false;
+
   @override
   void initState() {
     super.initState();
@@ -50,15 +59,20 @@ class _ExpandableRecordingCardState
     setState(() => _isExpanded = !_isExpanded);
 
     if (_isExpanded) {
-      // Initialize waveform controller and load audio
       _initializeWaveform();
       ref.read(playbackProvider.notifier).load(widget.recording.filePath);
+
+      // Show feature hints the very first time any card is expanded
+      if (!StorageService.getCardHintsSeen()) {
+        setState(() => _showCardHints = true);
+        StorageService.setCardHintsSeen(true);
+      }
     } else {
-      // Clean up
       ref.read(playbackProvider.notifier).stop();
       _waveformController?.dispose();
       _waveformController = null;
       _isEditingTitle = false;
+      _showCardHints = false;
     }
   }
 
@@ -98,6 +112,64 @@ class _ExpandableRecordingCardState
           .updateRecording(widget.recording.copyWith(title: newTitle));
     }
     setState(() => _isEditingTitle = false);
+  }
+
+  Future<void> _backupRecording() async {
+    if (_isBackingUp) return;
+
+    setState(() {
+      _isBackingUp = true;
+      _backupProgress = 0.0;
+      _backupError = null;
+    });
+
+    try {
+      final downloadUrl = await ref
+          .read(recordingProvider.notifier)
+          .backupRecording(
+        widget.recording,
+        onProgress: (progress) {
+          if (mounted) setState(() => _backupProgress = progress);
+        },
+      );
+
+      if (mounted) {
+        if (downloadUrl != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Backup complete ✓'),
+              backgroundColor: AppTheme.teal,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else {
+          setState(() => _backupError = 'Backup failed');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Backup failed. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _backupError = e.toString());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Backup error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBackingUp = false;
+          _backupProgress = 0.0;
+        });
+      }
+    }
   }
 
   Future<void> _shareRecording() async {
@@ -311,47 +383,53 @@ class _ExpandableRecordingCardState
                           Expanded(
                             child: _isEditingTitle
                                 ? TextField(
-                                    controller: _titleController,
-                                    autofocus: true,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.color,
-                                    ),
-                                    decoration: const InputDecoration(
-                                      isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                        vertical: 4,
-                                      ),
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    onSubmitted: (_) => _saveTitle(),
-                                  )
+                              controller: _titleController,
+                              autofocus: true,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodyMedium?.color,
+                              ),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 4,
+                                ),
+                                border: OutlineInputBorder(),
+                              ),
+                              onSubmitted: (_) => _saveTitle(),
+                            )
                                 : GestureDetector(
-                                    onTap: _startEditingTitle,
-                                    child: Row(
-                                      children: [
-                                        Text(
-                                          widget.recording.displayTitle,
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.titleMedium,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        if (_isExpanded)
-                                          Icon(
-                                            Icons.edit,
-                                            size: 14,
-                                            color: AppTheme.teal,
-                                          ),
-                                      ],
+                              onTap: _toggleExpanded,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      widget.recording.displayTitle,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                      softWrap: true,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
+                                  const SizedBox(width: 12),
+                                  if (_isExpanded)
+                                    GestureDetector(
+                                      onTap: _startEditingTitle,
+                                      child: Icon(
+                                        Icons.edit,
+                                        size: 14,
+                                        color: AppTheme.teal,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
                           if (_isEditingTitle)
                             IconButton(
@@ -363,15 +441,6 @@ class _ExpandableRecordingCardState
                               onPressed: _saveTitle,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
-                            ),
-                          if (widget.recording.isPinned && !_isEditingTitle)
-                            const Padding(
-                              padding: EdgeInsets.only(left: 6),
-                              child: Icon(
-                                Icons.push_pin,
-                                size: 14,
-                                color: AppTheme.orange,
-                              ),
                             ),
                         ],
                       ),
@@ -419,6 +488,22 @@ class _ExpandableRecordingCardState
                         : Icons.favorite_border,
                     size: 20,
                   ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    widget.recording.isPinned
+                        ? Icons.push_pin
+                        : Icons.push_pin_outlined,
+                  ),
+                  color: widget.recording.isPinned
+                      ? AppTheme.orange
+                      : AppTheme.mediumGray,
+                  onPressed: () {
+                    ref
+                        .read(recordingProvider.notifier)
+                        .togglePin(widget.recording.id);
+                  },
+                  tooltip: 'Pin',
                 ),
               ],
             ),
@@ -473,9 +558,9 @@ class _ExpandableRecordingCardState
                             // Calculate seek position
                             final Duration seekPosition = Duration(
                               milliseconds:
-                                  (widget.recording.duration.inMilliseconds *
-                                          percentage)
-                                      .toInt(),
+                              (widget.recording.duration.inMilliseconds *
+                                  percentage)
+                                  .toInt(),
                             );
 
                             // Seek both the waveform and playback
@@ -720,6 +805,14 @@ class _ExpandableRecordingCardState
                 widget.recording.transcript!.isNotEmpty)
               const SizedBox(height: 16),
 
+            // Feature hints strip (shown only on first-ever card expansion)
+            if (_showCardHints) ...[
+              _CardHintsStrip(onDismiss: () {
+                setState(() => _showCardHints = false);
+              }),
+              const SizedBox(height: 8),
+            ],
+
             // Action buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -770,13 +863,13 @@ class _ExpandableRecordingCardState
                           child: IconButton(
                             icon: transcriptionState.isTranscribing
                                 ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: AppTheme.teal,
-                                    ),
-                                  )
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppTheme.teal,
+                              ),
+                            )
                                 : const Icon(Icons.text_fields_rounded),
                             color: widget.recording.transcript != null
                                 ? AppTheme.orange
@@ -787,11 +880,11 @@ class _ExpandableRecordingCardState
                                   : canTranscribe
                                   ? _transcribeRecording()
                                   : FeatureGateDialog.show(
-                                      context,
-                                      title: 'Sign in required',
-                                      message:
-                                          'Sign in is required to use the transcription feature.',
-                                    );
+                                context,
+                                title: 'Sign in required',
+                                message:
+                                'Sign in is required to use the transcription feature.',
+                              );
                             },
                             tooltip: widget.recording.transcript != null
                                 ? 'Re-transcribe'
@@ -814,37 +907,58 @@ class _ExpandableRecordingCardState
                     );
                   },
                 ),
-                IconButton(
-                  icon: Icon(
-                    widget.recording.isFavorite
-                        ? Icons.favorite
-                        : Icons.favorite_border,
-                  ),
-                  color: widget.recording.isFavorite
-                      ? AppTheme.orange
-                      : AppTheme.mediumGray,
-                  onPressed: () {
-                    ref
-                        .read(recordingProvider.notifier)
-                        .toggleFavorite(widget.recording.id);
+                // Cloud backup button (authenticated users only)
+                Consumer(
+                  builder: (context, ref, child) {
+                    final isAuthenticated =
+                        ref.watch(authStateProvider).value != null;
+                    if (!isAuthenticated) return const SizedBox.shrink();
+
+                    final isBackedUp = widget.recording.isBackedUp;
+
+                    if (_isBackingUp) {
+                      // Show circular progress during upload
+                      return Tooltip(
+                        message:
+                        'Uploading… ${(_backupProgress * 100).toStringAsFixed(0)}%',
+                        child: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: CircularProgressIndicator(
+                              value: _backupProgress > 0
+                                  ? _backupProgress
+                                  : null,
+                              strokeWidth: 2,
+                              color: AppTheme.teal,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return IconButton(
+                      icon: Icon(
+                        isBackedUp
+                            ? Icons.cloud_done_rounded
+                            : (_backupError != null
+                            ? Icons.cloud_off_rounded
+                            : Icons.cloud_upload_rounded),
+                      ),
+                      color: isBackedUp
+                          ? AppTheme.teal
+                          : (_backupError != null
+                          ? Colors.red
+                          : AppTheme.mediumGray),
+                      onPressed: _backupRecording,
+                      tooltip: isBackedUp
+                          ? 'Backed up – tap to re-upload'
+                          : (_backupError != null
+                          ? 'Backup failed – tap to retry'
+                          : 'Back up to cloud'),
+                    );
                   },
-                  tooltip: 'Favorite',
-                ),
-                IconButton(
-                  icon: Icon(
-                    widget.recording.isPinned
-                        ? Icons.push_pin
-                        : Icons.push_pin_outlined,
-                  ),
-                  color: widget.recording.isPinned
-                      ? AppTheme.orange
-                      : AppTheme.mediumGray,
-                  onPressed: () {
-                    ref
-                        .read(recordingProvider.notifier)
-                        .togglePin(widget.recording.id);
-                  },
-                  tooltip: 'Pin',
                 ),
                 IconButton(
                   icon: const Icon(Icons.share_rounded),
@@ -914,31 +1028,31 @@ class _ExpandableRecordingCardState
               // Warning!!!
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Row(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        const Icon(Icons.warning_amber_rounded,
-                            color: AppTheme.orange, size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'This action cannot be undone.',
-                            style: TextStyle(fontSize: 13, color: AppTheme.orange),
-                          ),
-                        ),
+                        Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.warning_amber_rounded,
+                                  color: AppTheme.orange, size: 20),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'This action cannot be undone.',
+                                  style: TextStyle(fontSize: 13, color: AppTheme.orange),
+                                ),
+                              ),
+                            ]
+                        )
                       ]
-                    )
-                  ]
-                )
+                  )
               ),
 
               const SizedBox(height: 24),
@@ -993,5 +1107,105 @@ class _ExpandableRecordingCardState
     String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
     String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
     return '$twoDigitMinutes:$twoDigitSeconds';
+  }
+}
+
+// ─── Card feature hints strip ─────────────────────────────────────────────────
+
+class _CardHintsStrip extends StatelessWidget {
+  final VoidCallback onDismiss;
+
+  const _CardHintsStrip({required this.onDismiss});
+
+  static const _hints = [
+    _HintItem(icon: Icons.content_cut_rounded, label: 'Trim', color: AppTheme.teal),
+    _HintItem(icon: Icons.text_fields_rounded, label: 'Transcribe', color: AppTheme.teal),
+    _HintItem(icon: Icons.cloud_upload_rounded, label: 'Backup', color: AppTheme.teal),
+    _HintItem(icon: Icons.share_rounded, label: 'Share', color: AppTheme.teal),
+    _HintItem(icon: Icons.delete_outline_rounded, label: 'Delete', color: Colors.red),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: AppTheme.teal.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.teal.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.lightbulb_outline_rounded,
+                  size: 14, color: AppTheme.teal),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'What each button does',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.teal,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: onDismiss,
+                child: const Icon(Icons.close, size: 14, color: AppTheme.teal),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: _hints
+                .map((h) => _HintChip(icon: h.icon, label: h.label, color: h.color))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HintItem {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _HintItem({required this.icon, required this.label, required this.color});
+}
+
+class _HintChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _HintChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Theme.of(context).textTheme.bodySmall?.color,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
   }
 }
