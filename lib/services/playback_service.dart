@@ -1,127 +1,132 @@
 // lib/services/playback_service.dart
-import 'package:audioplayers/audioplayers.dart';
+//
+// Complete rewrite: audioplayers replaced by audio_waveforms PlayerController.
+// This service is used by PlaybackNotifier (trim screen, etc.).
+// The expandable_recording_card manages its own PlayerController directly.
+//
+// API surface is intentionally unchanged so trim_screen.dart needs no edits.
+
+import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:flutter/foundation.dart';
 
 class PlaybackService {
-  final _audioPlayer = AudioPlayer();
+  final PlayerController _controller = PlayerController();
   String? _currentFilePath;
   double _playbackSpeed = 1.0;
 
-  bool get isPlaying => _audioPlayer.state == PlayerState.playing;
-  bool get isPaused => _audioPlayer.state == PlayerState.paused;
   String? get currentFilePath => _currentFilePath;
   double get playbackSpeed => _playbackSpeed;
 
-  // Listeners
-  Stream<Duration> get onDurationChanged => _audioPlayer.onDurationChanged;
-  Stream<Duration> get onPositionChanged => _audioPlayer.onPositionChanged;
-  Stream<PlayerState> get onPlayerStateChanged => _audioPlayer.onPlayerStateChanged;
+  // ── Streams ───────────────────────────────────────────────────────────────
 
+  /// Emits the current playback position as a Duration (maps from ms int).
+  Stream<Duration> get onPositionChanged =>
+      _controller.onCurrentDurationChanged
+          .map((ms) => Duration(milliseconds: ms));
+
+  /// Forwards audio_waveforms PlayerState changes.
+  Stream<PlayerState> get onPlayerStateChanged =>
+      _controller.onPlayerStateChanged;
+
+  /// Fires once when a track finishes playing naturally.
+  Stream<void> get onCompletion => _controller.onCompletion;
+
+  // ── Playback API ──────────────────────────────────────────────────────────
+
+  /// Prepares [filePath] for playback and returns its total duration.
+  ///
+  /// Calling load() again while something is playing will stop the current
+  /// track first, then prepare the new one.
   Future<Duration?> load(String filePath) async {
     try {
       _currentFilePath = filePath;
-      await _audioPlayer.setSourceDeviceFile(filePath);
-      return _audioPlayer.getDuration();
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading audio: $e');
+
+      // Stop any current playback before re-preparing.
+      if (_controller.playerState == PlayerState.playing ||
+          _controller.playerState == PlayerState.paused) {
+        await _controller.stopPlayer();
       }
+
+      await _controller.preparePlayer(
+        path: filePath,
+        // Waveform extraction is not needed here — this controller is purely
+        // for audio output; the card / trim screen have their own controllers
+        // for visualisation.
+        shouldExtractWaveform: false,
+      );
+
+      // maxDuration is populated synchronously after preparePlayer().
+      return Duration(milliseconds: _controller.maxDuration);
+    } catch (e) {
+      if (kDebugMode) print('PlaybackService.load error: $e');
       return null;
     }
   }
 
   Future<void> play() async {
     try {
-      // If player has finished or is stopped, start from the beginning
-      if (_audioPlayer.state == PlayerState.stopped ||
-          _audioPlayer.state == PlayerState.completed) {
-        if (_currentFilePath != null) {
-          await _audioPlayer.play(DeviceFileSource(_currentFilePath!));
-        } else {
-          if (kDebugMode) {
-            print('No file loaded to play.');
-          }
-        }
-      } else {
-        await _audioPlayer.resume();
-      }
+      await _controller.startPlayer();
     } catch (e) {
-      if (kDebugMode) {
-        print('Error playing audio: $e');
-      }
+      if (kDebugMode) print('PlaybackService.play error: $e');
     }
   }
 
   Future<void> pause() async {
     try {
-      await _audioPlayer.pause();
+      await _controller.pausePlayer();
     } catch (e) {
-      if (kDebugMode) {
-        print('Error pausing audio: $e');
-      }
+      if (kDebugMode) print('PlaybackService.pause error: $e');
     }
   }
 
   Future<void> stop() async {
     try {
-      await _audioPlayer.stop();
+      await _controller.stopPlayer();
     } catch (e) {
-      if (kDebugMode) {
-        print('Error stopping audio: $e');
-      }
+      if (kDebugMode) print('PlaybackService.stop error: $e');
     }
   }
 
   Future<void> seek(Duration position) async {
     try {
-      await _audioPlayer.seek(position);
+      await _controller.seekTo(position.inMilliseconds);
     } catch (e) {
-      if (kDebugMode) {
-        print('Error seeking: $e');
-      }
+      if (kDebugMode) print('PlaybackService.seek error: $e');
     }
   }
 
   Future<void> setPlaybackSpeed(double speed) async {
     try {
       _playbackSpeed = speed;
-      await _audioPlayer.setPlaybackRate(speed);
+      await _controller.setRate(speed);
     } catch (e) {
-      if (kDebugMode) {
-        print('Error setting playback speed: $e');
-      }
+      if (kDebugMode) print('PlaybackService.setRate error: $e');
     }
   }
 
-  Future<void> skipForward(Duration duration) async {
+  Future<void> skipForward(Duration by) async {
     try {
-      final currentPosition = await _audioPlayer.getCurrentPosition();
-      if (currentPosition != null) {
-        final newPosition = currentPosition + duration;
-        await seek(newPosition);
-      }
+      final currentMs = await _controller.getDuration(DurationType.current) ?? 0;
+      final newMs = (currentMs + by.inMilliseconds)
+          .clamp(0, _controller.maxDuration);
+      await _controller.seekTo(newMs);
     } catch (e) {
-      if (kDebugMode) {
-        print('Error skipping forward: $e');
-      }
+      if (kDebugMode) print('PlaybackService.skipForward error: $e');
     }
   }
 
-  Future<void> skipBackward(Duration duration) async {
+  Future<void> skipBackward(Duration by) async {
     try {
-      final currentPosition = await _audioPlayer.getCurrentPosition();
-      if (currentPosition != null) {
-        final newPosition = currentPosition - duration;
-        await seek(newPosition.isNegative ? Duration.zero : newPosition);
-      }
+      final currentMs = await _controller.getDuration(DurationType.current) ?? 0;
+      final newMs = (currentMs - by.inMilliseconds)
+          .clamp(0, _controller.maxDuration);
+      await _controller.seekTo(newMs);
     } catch (e) {
-      if (kDebugMode) {
-        print('Error skipping backward: $e');
-      }
+      if (kDebugMode) print('PlaybackService.skipBackward error: $e');
     }
   }
 
   void dispose() {
-    _audioPlayer.dispose();
+    _controller.dispose();
   }
 }

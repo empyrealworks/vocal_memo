@@ -31,6 +31,11 @@ class RecordingSettings extends HiveObject {
   @HiveField(8)
   String themeMode;
 
+  // HiveField(9) — added in v1.3.0. Existing boxes missing this field
+  // will default to true (beeps on) via the generated adapter.
+  @HiveField(9)
+  bool enableBeeps;
+
   RecordingSettings({
     this.autoGainControl = true,
     this.noiseSuppression = true,
@@ -41,6 +46,7 @@ class RecordingSettings extends HiveObject {
     this.audioFormat = "m4a",
     this.showWaveform = true,
     this.themeMode = "System",
+    this.enableBeeps = true,
   });
 
   RecordingSettings copyWith({
@@ -53,6 +59,7 @@ class RecordingSettings extends HiveObject {
     String? audioFormat,
     bool? showWaveform,
     String? themeMode,
+    bool? enableBeeps,
   }) {
     return RecordingSettings(
       autoGainControl: autoGainControl ?? this.autoGainControl,
@@ -64,6 +71,7 @@ class RecordingSettings extends HiveObject {
       audioFormat: audioFormat ?? this.audioFormat,
       showWaveform: showWaveform ?? this.showWaveform,
       themeMode: themeMode ?? this.themeMode,
+      enableBeeps: enableBeeps ?? this.enableBeeps,
     );
   }
 }

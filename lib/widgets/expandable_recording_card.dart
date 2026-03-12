@@ -1,20 +1,23 @@
 // lib/widgets/expandable_recording_card.dart
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:vocal_memo/providers/auth_provider.dart';
-import 'package:vocal_memo/screens/transcript_viewer_screen.dart';
+import 'package:vocal_memo/widgets/expandable_recording_card/recording_action_bar.dart';
 import 'dart:io';
-import '../providers/settings_provider.dart';
 import '../providers/transcription_provider.dart';
-import '../screens/trim_screen.dart';
-import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
 import '../providers/recording_provider.dart';
 import '../providers/playback_provider.dart';
+import 'expandable_recording_card/recording_card_header.dart';
+import 'expandable_recording_card/transcript_preview_box.dart';
+import 'expandable_recording_card/transport_controls.dart';
+import 'expandable_recording_card/waveform_player_area.dart';
 import 'feature_gate_dialog.dart';
 
 class ExpandableRecordingCard extends ConsumerStatefulWidget {
@@ -32,7 +35,16 @@ class _ExpandableRecordingCardState
   bool _isExpanded = false;
   bool _isEditingTitle = false;
   late TextEditingController _titleController;
+
+  // ── Playback state (all driven by PlayerController) ───────────────────────
   PlayerController? _waveformController;
+  StreamSubscription<int>? _positionSub;
+  StreamSubscription<PlayerState>? _playerStateSub;
+  StreamSubscription<void>? _completionSub;
+
+  int _currentPositionMs = 0;
+  bool _isPlaying = false;
+  double _playbackSpeed = 1.0;
 
   // Backup state
   bool _isBackingUp = false;
@@ -51,49 +63,107 @@ class _ExpandableRecordingCardState
   @override
   void dispose() {
     _titleController.dispose();
+    _cancelSubscriptions();
+    _waveformController?.stopPlayer();
     _waveformController?.dispose();
     super.dispose();
   }
 
+  void _cancelSubscriptions() {
+    _positionSub?.cancel();
+    _playerStateSub?.cancel();
+    _completionSub?.cancel();
+    _positionSub = null;
+    _playerStateSub = null;
+    _completionSub = null;
+  }
+
+  // ── Expand / collapse ─────────────────────────────────────────────────────
+
   void _toggleExpanded() {
     setState(() => _isExpanded = !_isExpanded);
-
     if (_isExpanded) {
       _initializeWaveform();
-      ref.read(playbackProvider.notifier).load(widget.recording.filePath);
-
-      // Show feature hints the very first time any card is expanded
-      if (!StorageService.getCardHintsSeen()) {
-        setState(() => _showCardHints = true);
-        StorageService.setCardHintsSeen(true);
-      }
     } else {
-      ref.read(playbackProvider.notifier).stop();
-      _waveformController?.dispose();
-      _waveformController = null;
-      _isEditingTitle = false;
-      _showCardHints = false;
+      _collapseCleanup();
     }
   }
+
+  void _collapseCleanup() {
+    _cancelSubscriptions();
+    _waveformController?.stopPlayer();
+    _waveformController?.dispose();
+    _waveformController = null;
+
+    if (ref.read(activeCardPlayerProvider) == widget.recording.id) {
+      ref.read(activeCardPlayerProvider.notifier).state = null;
+    }
+
+    setState(() {
+      _isPlaying = false;
+      _currentPositionMs = 0;
+      _playbackSpeed = 1.0;
+      _isEditingTitle = false;
+    });
+  }
+
+  // ── Waveform / player initialisation ─────────────────────────────────────
 
   void _initializeWaveform() async {
     try {
       _waveformController = PlayerController();
+
+      // Use medium update frequency — smooth position tick without hammering.
+      _waveformController!.updateFrequency = UpdateFrequency.medium;
+
+      // Position stream.
+      _positionSub = _waveformController!.onCurrentDurationChanged.listen((ms) {
+        if (mounted) setState(() => _currentPositionMs = ms);
+      });
+
+      // State stream — keep _isPlaying in sync.
+      _playerStateSub = _waveformController!.onPlayerStateChanged.listen((
+        state,
+      ) {
+        if (!mounted) return;
+        setState(() => _isPlaying = state == PlayerState.playing);
+      });
+
+      // Completion — reset to start, release focus.
+      _completionSub = _waveformController!.onCompletion.listen((_) {
+        if (!mounted) return;
+        setState(() {
+          _isPlaying = false;
+          _currentPositionMs = 0;
+        });
+        if (ref.read(activeCardPlayerProvider) == widget.recording.id) {
+          ref.read(activeCardPlayerProvider.notifier).state = null;
+        }
+      });
+
+      // WaveformType.long needs a density that makes the scrollable waveform
+      // readable. 10 samples/second is ideal:
+      //   1-min recording  →  600 samples  (rich detail)
+      //   5-min recording  → 3 000 samples (still smooth, not squashed)
+      //  60-min recording  → 36 000 samples (capped by plugin internally)
       await _waveformController!.preparePlayer(
         path: widget.recording.filePath,
         shouldExtractWaveform: true,
-        noOfSamples: 100,
+        noOfSamples: 10,
       );
 
-      if (mounted) {
-        setState(() {});
+      // Restore speed if the card was previously playing at a non-default rate.
+      if (_playbackSpeed != 1.0) {
+        await _waveformController!.setRate(_playbackSpeed);
       }
+
+      if (mounted) setState(() {});
     } catch (e) {
-      if (kDebugMode) {
-        print('Error initializing waveform: $e');
-      }
+      if (kDebugMode) print('Error initializing waveform: $e');
     }
   }
+
+  // ── Title editing ─────────────────────────────────────────────────────────
 
   void _startEditingTitle() {
     if (_isExpanded) {
@@ -114,6 +184,35 @@ class _ExpandableRecordingCardState
     setState(() => _isEditingTitle = false);
   }
 
+  // ── Playback controls ─────────────────────────────────────────────────────
+
+  Future<void> _togglePlayPause() async {
+    if (_waveformController == null) return;
+    if (_isPlaying) {
+      await _waveformController!.pausePlayer();
+    } else {
+      // Claim global audio focus — all other cards will pause.
+      ref.read(activeCardPlayerProvider.notifier).state = widget.recording.id;
+      await _waveformController!.startPlayer();
+    }
+  }
+
+  Future<void> _seekTo(int ms) async {
+    if (_waveformController == null) return;
+    final clamped = ms.clamp(0, widget.recording.duration.inMilliseconds);
+    await _waveformController!.seekTo(clamped);
+    if (mounted) setState(() => _currentPositionMs = clamped);
+  }
+
+  Future<void> _skipForward() async => _seekTo(_currentPositionMs + 10000);
+  Future<void> _skipBackward() async => _seekTo(_currentPositionMs - 10000);
+
+  Future<void> _setSpeed(double speed) async {
+    if (_waveformController == null) return;
+    await _waveformController!.setRate(speed);
+    setState(() => _playbackSpeed = speed);
+  }
+
   Future<void> _backupRecording() async {
     if (_isBackingUp) return;
 
@@ -127,11 +226,11 @@ class _ExpandableRecordingCardState
       final downloadUrl = await ref
           .read(recordingProvider.notifier)
           .backupRecording(
-        widget.recording,
-        onProgress: (progress) {
-          if (mounted) setState(() => _backupProgress = progress);
-        },
-      );
+            widget.recording,
+            onProgress: (progress) {
+              if (mounted) setState(() => _backupProgress = progress);
+            },
+          );
 
       if (mounted) {
         if (downloadUrl != null) {
@@ -172,6 +271,8 @@ class _ExpandableRecordingCardState
     }
   }
 
+  // ── Share ─────────────────────────────────────────────────────────────────
+
   Future<void> _shareRecording() async {
     try {
       final file = File(widget.recording.filePath);
@@ -184,9 +285,7 @@ class _ExpandableRecordingCardState
         );
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error sharing: $e');
-      }
+      if (kDebugMode) print('Error sharing: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to share recording')),
@@ -195,16 +294,17 @@ class _ExpandableRecordingCardState
     }
   }
 
+  // ── Transcription ─────────────────────────────────────────────────────────
+
   Future<void> _transcribeRecording() async {
     final canTranscribe = ref.read(canTranscribeProvider);
     final isAuthenticated = ref.read(authStateProvider).value != null;
 
-    // Check 1-minute limit for unregistered users
     if (!isAuthenticated && widget.recording.duration.inSeconds > 60) {
       await FeatureGateDialog.show(
         context,
         title: 'Transcription Limit',
-        message: 'Free users can only transcribe recordings up to 1 minute long.',
+        message: 'Free users can only transcribe recordings up to 1 minute.',
         benefits: [
           'Unlimited transcription length',
           'Better AI model (Gemini 2.5)',
@@ -215,12 +315,11 @@ class _ExpandableRecordingCardState
       return;
     }
 
-    // Check if user can transcribe (registered users only)
     if (!canTranscribe) {
       await FeatureGateDialog.show(
         context,
         title: 'Transcription Requires Account',
-        message: 'Sign up for free to transcribe your recordings with AI.',
+        message: 'Sign up for free to transcribe recordings with AI.',
         benefits: [
           'AI transcription with Gemini',
           'Cloud backup & sync',
@@ -231,7 +330,6 @@ class _ExpandableRecordingCardState
       return;
     }
 
-    // Check rate limit for registered users
     final usage = await ref.read(dailyUsageProvider.future);
     if (!(usage['canTranscribe'] as bool)) {
       final resetTime = ref.read(rateLimitServiceProvider).getTimeUntilReset();
@@ -254,10 +352,8 @@ class _ExpandableRecordingCardState
     }
 
     try {
-      // Increment usage count
       final rateLimitService = ref.read(rateLimitServiceProvider);
       final incremented = await rateLimitService.incrementUsage();
-
       if (!incremented) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -269,11 +365,8 @@ class _ExpandableRecordingCardState
         }
         return;
       }
-
-      // Refresh usage provider to update badge
       ref.invalidate(dailyUsageProvider);
 
-      // Show loading indicator
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -288,7 +381,7 @@ class _ExpandableRecordingCardState
                   ),
                 ),
                 SizedBox(width: 16),
-                Text('Transcribing audio...'),
+                Text('Transcribing audio…'),
               ],
             ),
             duration: Duration(seconds: 30),
@@ -296,8 +389,8 @@ class _ExpandableRecordingCardState
         );
       }
 
-      // Trigger transcription
-      await ref.read(transcriptionNotifierProvider(widget.recording.id).notifier)
+      await ref
+          .read(transcriptionNotifierProvider(widget.recording.id).notifier)
           .transcribe(widget.recording);
 
       if (mounted) {
@@ -325,12 +418,18 @@ class _ExpandableRecordingCardState
 
   @override
   Widget build(BuildContext context) {
-    final playbackState = ref.watch(playbackProvider);
-    final isCurrentlyPlaying =
-        playbackState.currentFilePath == widget.recording.filePath;
-    final transcriptionState = ref.watch(
-      transcriptionNotifierProvider(widget.recording.id),
-    );
+    // When another card claims focus, pause this one.
+    ref.listen<String?>(activeCardPlayerProvider, (prev, next) {
+      if (next != null &&
+          next != widget.recording.id &&
+          _isPlaying &&
+          _waveformController != null) {
+        _waveformController!.pausePlayer();
+      }
+    });
+
+    final transcriptionState =
+    ref.watch(transcriptionNotifierProvider(widget.recording.id));
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 600),
@@ -354,275 +453,53 @@ class _ExpandableRecordingCardState
       child: Column(
         children: [
           // Header (always visible)
-          GestureDetector(
-            onTap: _isEditingTitle ? null : _toggleExpanded,
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppTheme.teal.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    _isExpanded
-                        ? Icons.arrow_drop_down_rounded
-                        : Icons.play_arrow_rounded,
-                    color: AppTheme.teal,
-                    size: _isExpanded ? 40 : 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _isEditingTitle
-                                ? TextField(
-                              controller: _titleController,
-                              autofocus: true,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(
-                                  context,
-                                ).textTheme.bodyMedium?.color,
-                              ),
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 4,
-                                ),
-                                border: OutlineInputBorder(),
-                              ),
-                              onSubmitted: (_) => _saveTitle(),
-                            )
-                                : GestureDetector(
-                              onTap: _toggleExpanded,
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      widget.recording.displayTitle,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleMedium,
-                                      softWrap: true,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  if (_isExpanded)
-                                    GestureDetector(
-                                      onTap: _startEditingTitle,
-                                      child: Icon(
-                                        Icons.edit,
-                                        size: 14,
-                                        color: AppTheme.teal,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (_isEditingTitle)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.check,
-                                size: 24,
-                                color: AppTheme.teal,
-                              ),
-                              onPressed: _saveTitle,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Text(
-                            widget.recording.formattedDuration,
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            widget.recording.formattedTime,
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                          if (transcriptionState.isTranscribing) ...[
-                            const SizedBox(width: 8),
-                            const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppTheme.teal,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  color: widget.recording.isFavorite
-                      ? AppTheme.orange
-                      : AppTheme.mediumGray,
-                  onPressed: () {
-                    ref
-                        .read(recordingProvider.notifier)
-                        .toggleFavorite(widget.recording.id);
-                  },
-                  icon: Icon(
-                    widget.recording.isFavorite
-                        ? Icons.favorite
-                        : Icons.favorite_border,
-                    size: 20,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    widget.recording.isPinned
-                        ? Icons.push_pin
-                        : Icons.push_pin_outlined,
-                  ),
-                  color: widget.recording.isPinned
-                      ? AppTheme.orange
-                      : AppTheme.mediumGray,
-                  onPressed: () {
-                    ref
-                        .read(recordingProvider.notifier)
-                        .togglePin(widget.recording.id);
-                  },
-                  tooltip: 'Pin',
-                ),
-              ],
-            ),
+          RecordingCardHeader(
+            recording: widget.recording,
+            isExpanded: _isExpanded,
+            isEditingTitle: _isEditingTitle,
+            titleController: _titleController,
+            isTranscribing: transcriptionState.isTranscribing,
+            onToggleExpand: _toggleExpanded,
+            onStartEditingTitle: _startEditingTitle,
+            onSaveTitle: _saveTitle,
           ),
 
           // Expanded content
           if (_isExpanded) ...[
             const SizedBox(height: 16),
 
-            // Waveform visualization (conditionally shown based on settings)
-            Consumer(
-              builder: (context, ref, child) {
-                final settings = ref.watch(settingsProvider);
-
-                if (!settings.showWaveform) {
-                  // If waveform is disabled, show placeholder
-                  return Container(
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).scaffoldBackgroundColor,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Center(
-                      child: Text(
-                        'Waveform disabled in settings',
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                if (_waveformController != null) {
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      return Container(
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: GestureDetector(
-                          onTapDown: (details) async {
-                            // Calculate position based on tap
-                            final double tapPosition = details.localPosition.dx;
-                            final double width = constraints.maxWidth;
-                            final double percentage = (tapPosition / width)
-                                .clamp(0.0, 1.0);
-
-                            // Calculate seek position
-                            final Duration seekPosition = Duration(
-                              milliseconds:
-                              (widget.recording.duration.inMilliseconds *
-                                  percentage)
-                                  .toInt(),
-                            );
-
-                            // Seek both the waveform and playback
-                            await _waveformController?.seekTo(
-                              seekPosition.inMilliseconds,
-                            );
-                            await ref
-                                .read(playbackProvider.notifier)
-                                .seek(seekPosition);
-                          },
-                          child: AudioFileWaveforms(
-                            size: Size(constraints.maxWidth, 80),
-                            playerController: _waveformController!,
-                            waveformType: WaveformType.fitWidth,
-                            playerWaveStyle: PlayerWaveStyle(
-                              fixedWaveColor: AppTheme.teal.withValues(
-                                alpha: 0.3,
-                              ),
-                              liveWaveColor: AppTheme.teal,
-                              spacing: 6,
-                              waveThickness: 3,
-                              showSeekLine: true,
-                              seekLineColor: AppTheme.orange,
-                              seekLineThickness: 2,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                } else {
-                  return Container(
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: AppTheme.lightGray,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Center(
-                      child: CircularProgressIndicator(color: AppTheme.teal),
-                    ),
-                  );
-                }
-              },
+            // Waveform Area
+            WaveformPlayerArea(
+              controller: _waveformController,
             ),
 
             const SizedBox(height: 8),
 
-            // Position display
+            // ── Position / duration labels ─────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    isCurrentlyPlaying
-                        ? _formatDuration(playbackState.position)
-                        : '00:00',
+                    _formatDuration(Duration(milliseconds: _currentPositionMs)),
                     style: TextStyle(
                       fontSize: 11,
                       color: Theme.of(context).textTheme.displaySmall?.color,
                     ),
                   ),
+                  // Drag hint — only show when not playing.
+                  if (!_isPlaying)
+                    Text(
+                      '← drag to seek →',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(
+                          context,
+                        ).textTheme.displaySmall?.color?.withValues(alpha: 0.4),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   Text(
                     widget.recording.formattedDuration,
                     style: TextStyle(
@@ -633,173 +510,23 @@ class _ExpandableRecordingCardState
                 ],
               ),
             ),
+
             const SizedBox(height: 16),
 
-            // Playback controls
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.replay_10_rounded),
-                  color: AppTheme.teal,
-                  iconSize: 28,
-                  onPressed: () =>
-                      ref.read(playbackProvider.notifier).skipBackward(),
-                ),
-                const SizedBox(width: 24),
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.orange,
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: Icon(
-                      isCurrentlyPlaying && playbackState.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    onPressed: () async {
-                      if (isCurrentlyPlaying) {
-                        await ref
-                            .read(playbackProvider.notifier)
-                            .togglePlayPause();
-                      } else {
-                        await ref
-                            .read(playbackProvider.notifier)
-                            .load(widget.recording.filePath);
-                        await _waveformController?.startPlayer();
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 24),
-                IconButton(
-                  icon: const Icon(Icons.forward_10_rounded),
-                  color: AppTheme.teal,
-                  iconSize: 28,
-                  onPressed: () =>
-                      ref.read(playbackProvider.notifier).skipForward(),
-                ),
-              ],
+            // ── Transport controls ─────────────────────────────────────
+            TransportControls(
+              isPlaying: _isPlaying,
+              currentSpeed: _playbackSpeed,
+              onPlayPause: _togglePlayPause,
+              onSkipForward: _skipForward,
+              onSkipBackward: _skipBackward,
+              onSpeedChanged: _setSpeed,
             ),
+
             const SizedBox(height: 16),
 
-            // Speed selector
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [1.0, 1.5, 2.0].map((speed) {
-                final label = speed == speed.toInt()
-                    ? '${speed.toInt()}x'
-                    : '${speed}x';
-                final isSelected =
-                    isCurrentlyPlaying && playbackState.playbackSpeed == speed;
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(
-                    checkmarkColor: Colors.white,
-                    label: Text(label),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected && isCurrentlyPlaying) {
-                        ref
-                            .read(playbackProvider.notifier)
-                            .setPlaybackSpeed(speed);
-                      }
-                    },
-                    selectedColor: AppTheme.teal,
-                    backgroundColor: Theme.of(context).cardColor,
-                    side: BorderSide(
-                      color: isSelected ? AppTheme.teal : AppTheme.mediumGray,
-                    ),
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : Theme.of(context).textTheme.bodyMedium?.color,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-
-            // Transcript display with preview
-            if (widget.recording.transcript != null &&
-                widget.recording.transcript!.isNotEmpty)
-              GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          TranscriptViewerScreen(recording: widget.recording),
-                    ),
-                  );
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).scaffoldBackgroundColor,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppTheme.teal.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.text_fields,
-                            size: 16,
-                            color: AppTheme.teal,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Transcript',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                          const Spacer(),
-                          Icon(
-                            Icons.arrow_forward_ios,
-                            size: 12,
-                            color: AppTheme.teal.withValues(alpha: 0.5),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.recording.displayTranscript,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (widget.recording.displayTranscript.split('\n').length > 4 ||
-                          widget.recording.displayTranscript.length > 200)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            'Tap to view full transcript',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppTheme.teal,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
+            // ── Transcript preview ─────────────────────────────────────
+            TranscriptPreviewBox(recording: widget.recording),
 
             if (widget.recording.transcript != null &&
                 widget.recording.transcript!.isNotEmpty)
@@ -807,177 +534,62 @@ class _ExpandableRecordingCardState
 
             // Feature hints strip (shown only on first-ever card expansion)
             if (_showCardHints) ...[
-              _CardHintsStrip(onDismiss: () {
-                setState(() => _showCardHints = false);
-              }),
+              _CardHintsStrip(
+                onDismiss: () {
+                  setState(() => _showCardHints = false);
+                },
+              ),
               const SizedBox(height: 8),
             ],
 
-            // Action buttons
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.content_cut_rounded),
-                  color: AppTheme.teal,
-                  onPressed: () {
-                    // Check if yser can trim
-                    final canTrim = ref.read(canTrimProvider);
-
-                    if (!canTrim) {
-                      FeatureGateDialog.show(
-                        context,
-                        title: 'Sign in required',
-                        message: 'Sign in is required to use the trim feature.',
-                      );
-                      return;
-                    }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            TrimScreen(recording: widget.recording),
-                      ),
-                    );
-                  },
-                  tooltip: 'Trim',
-                ),
-                // Transcribe button with rate limit badge
-                Consumer(
-                  builder: (context, ref, child) {
-                    final usage = ref.watch(dailyUsageProvider);
-
-                    return usage.when(
-                      data: (data) {
-                        final remaining = data['remaining'] as int? ?? 0;
-                        final canTranscribe = ref.read(canTranscribeProvider);
-
-                        return Badge(
-                          label: canTranscribe && remaining >= 0
-                              ? Text('$remaining')
-                              : null,
-                          isLabelVisible: canTranscribe,
-                          backgroundColor: remaining > 3
-                              ? AppTheme.teal
-                              : AppTheme.orange,
-                          child: IconButton(
-                            icon: transcriptionState.isTranscribing
-                                ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppTheme.teal,
-                              ),
-                            )
-                                : const Icon(Icons.text_fields_rounded),
-                            color: widget.recording.transcript != null
-                                ? AppTheme.orange
-                                : AppTheme.teal,
-                            onPressed: () {
-                              transcriptionState.isTranscribing
-                                  ? null
-                                  : canTranscribe
-                                  ? _transcribeRecording()
-                                  : FeatureGateDialog.show(
-                                context,
-                                title: 'Sign in required',
-                                message:
-                                'Sign in is required to use the transcription feature.',
-                              );
-                            },
-                            tooltip: widget.recording.transcript != null
-                                ? 'Re-transcribe'
-                                : 'Transcribe',
-                          ),
-                        );
-                      },
-                      loading: () => IconButton(
-                        icon: const Icon(Icons.text_fields_rounded),
-                        color: AppTheme.teal,
-                        onPressed: _transcribeRecording,
-                        tooltip: 'Transcribe',
-                      ),
-                      error: (_, __) => IconButton(
-                        icon: const Icon(Icons.text_fields_rounded),
-                        color: AppTheme.teal,
-                        onPressed: _transcribeRecording,
-                        tooltip: 'Transcribe',
-                      ),
-                    );
-                  },
-                ),
-                // Cloud backup button (authenticated users only)
-                Consumer(
-                  builder: (context, ref, child) {
-                    final isAuthenticated =
-                        ref.watch(authStateProvider).value != null;
-                    if (!isAuthenticated) return const SizedBox.shrink();
-
-                    final isBackedUp = widget.recording.isBackedUp;
-
-                    if (_isBackingUp) {
-                      // Show circular progress during upload
-                      return Tooltip(
-                        message:
-                        'Uploading… ${(_backupProgress * 100).toStringAsFixed(0)}%',
-                        child: SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: CircularProgressIndicator(
-                              value: _backupProgress > 0
-                                  ? _backupProgress
-                                  : null,
-                              strokeWidth: 2,
-                              color: AppTheme.teal,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-
-                    return IconButton(
-                      icon: Icon(
-                        isBackedUp
-                            ? Icons.cloud_done_rounded
-                            : (_backupError != null
-                            ? Icons.cloud_off_rounded
-                            : Icons.cloud_upload_rounded),
-                      ),
-                      color: isBackedUp
-                          ? AppTheme.teal
-                          : (_backupError != null
-                          ? Colors.red
-                          : AppTheme.mediumGray),
-                      onPressed: _backupRecording,
-                      tooltip: isBackedUp
-                          ? 'Backed up – tap to re-upload'
-                          : (_backupError != null
-                          ? 'Backup failed – tap to retry'
-                          : 'Back up to cloud'),
-                    );
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.share_rounded),
-                  color: AppTheme.teal,
-                  onPressed: _shareRecording,
-                  tooltip: 'Share',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  color: Colors.red,
-                  onPressed: () {
-                    _showDeleteConfirmation(context);
-                  },
-                  tooltip: 'Delete',
-                ),
-              ],
+            // Action Bar
+            RecordingActionBar(
+              recording: widget.recording,
+              isTranscribing: transcriptionState.isTranscribing,
+              isBackingUp: _isBackingUp,
+              backupProgress: _backupProgress,
+              backupError: _backupError,
+              onTranscribe: _transcribeRecording,
+              onBackup: _backupRecording,
+              onShare: _shareRecording,
+              onDelete: () => _showDeleteConfirmation(context),
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  // ── Waveform placeholders ──────────────────────────────────────────────────
+
+  Widget _waveformDisabledPlaceholder() {
+    return Container(
+      height: 88,
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: Text(
+          'Waveform disabled in settings',
+          style: TextStyle(
+            color: Theme.of(context).textTheme.bodySmall?.color,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _waveformLoadingPlaceholder() {
+    return Container(
+      height: 88,
+      decoration: BoxDecoration(
+        color: AppTheme.lightGray,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Center(
+        child: CircularProgressIndicator(color: AppTheme.teal),
       ),
     );
   }
@@ -1028,31 +640,37 @@ class _ExpandableRecordingCardState
               // Warning!!!
               const SizedBox(height: 12),
               Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.orange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.warning_amber_rounded,
-                                  color: AppTheme.orange, size: 20),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'This action cannot be undone.',
-                                  style: TextStyle(fontSize: 13, color: AppTheme.orange),
-                                ),
-                              ),
-                            ]
-                        )
-                      ]
-                  )
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: AppTheme.orange,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'This action cannot be undone.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.orange,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 24),
@@ -1118,11 +736,27 @@ class _CardHintsStrip extends StatelessWidget {
   const _CardHintsStrip({required this.onDismiss});
 
   static const _hints = [
-    _HintItem(icon: Icons.content_cut_rounded, label: 'Trim', color: AppTheme.teal),
-    _HintItem(icon: Icons.text_fields_rounded, label: 'Transcribe', color: AppTheme.teal),
-    _HintItem(icon: Icons.cloud_upload_rounded, label: 'Backup', color: AppTheme.teal),
+    _HintItem(
+      icon: Icons.content_cut_rounded,
+      label: 'Trim',
+      color: AppTheme.teal,
+    ),
+    _HintItem(
+      icon: Icons.text_fields_rounded,
+      label: 'Transcribe',
+      color: AppTheme.teal,
+    ),
+    _HintItem(
+      icon: Icons.cloud_upload_rounded,
+      label: 'Backup',
+      color: AppTheme.teal,
+    ),
     _HintItem(icon: Icons.share_rounded, label: 'Share', color: AppTheme.teal),
-    _HintItem(icon: Icons.delete_outline_rounded, label: 'Delete', color: Colors.red),
+    _HintItem(
+      icon: Icons.delete_outline_rounded,
+      label: 'Delete',
+      color: Colors.red,
+    ),
   ];
 
   @override
@@ -1140,8 +774,11 @@ class _CardHintsStrip extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.lightbulb_outline_rounded,
-                  size: 14, color: AppTheme.teal),
+              const Icon(
+                Icons.lightbulb_outline_rounded,
+                size: 14,
+                color: AppTheme.teal,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -1163,7 +800,10 @@ class _CardHintsStrip extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: _hints
-                .map((h) => _HintChip(icon: h.icon, label: h.label, color: h.color))
+                .map(
+                  (h) =>
+                      _HintChip(icon: h.icon, label: h.label, color: h.color),
+                )
                 .toList(),
           ),
         ],
@@ -1176,7 +816,11 @@ class _HintItem {
   final IconData icon;
   final String label;
   final Color color;
-  const _HintItem({required this.icon, required this.label, required this.color});
+  const _HintItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
 }
 
 class _HintChip extends StatelessWidget {

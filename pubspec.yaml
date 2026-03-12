@@ -19,12 +19,10 @@ dependencies:
 
   # Audio recording and playback
   record: ^6.1.2
-  audioplayers: ^6.5.1
   path_provider: ^2.1.5
 
   # Audio waveforms - NEW
   audio_waveforms: ^1.1.0
-  just_audio: ^0.9.42
 
   # State management
   flutter_riverpod: ^3.0.3
