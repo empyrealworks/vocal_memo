@@ -56,8 +56,8 @@ class WaveformPlayerArea extends ConsumerWidget {
               playerWaveStyle: PlayerWaveStyle(
                 fixedWaveColor: AppTheme.teal.withValues(alpha: 0.25),
                 liveWaveColor: AppTheme.teal,
-                spacing: 5,
-                waveThickness: 4,
+                spacing: 3,
+                waveThickness: 2,
                 showSeekLine: true,
                 seekLineColor: AppTheme.orange,
                 seekLineThickness: 2,

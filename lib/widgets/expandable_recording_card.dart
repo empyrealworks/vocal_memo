@@ -149,7 +149,7 @@ class _ExpandableRecordingCardState
       await _waveformController!.preparePlayer(
         path: widget.recording.filePath,
         shouldExtractWaveform: true,
-        noOfSamples: 10,
+        noOfSamplesPerSecond: 10,
       );
 
       // Restore speed if the card was previously playing at a non-default rate.
@@ -556,40 +556,6 @@ class _ExpandableRecordingCardState
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  // ── Waveform placeholders ──────────────────────────────────────────────────
-
-  Widget _waveformDisabledPlaceholder() {
-    return Container(
-      height: 88,
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Center(
-        child: Text(
-          'Waveform disabled in settings',
-          style: TextStyle(
-            color: Theme.of(context).textTheme.bodySmall?.color,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _waveformLoadingPlaceholder() {
-    return Container(
-      height: 88,
-      decoration: BoxDecoration(
-        color: AppTheme.lightGray,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Center(
-        child: CircularProgressIndicator(color: AppTheme.teal),
       ),
     );
   }
