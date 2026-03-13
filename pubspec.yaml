@@ -3,7 +3,7 @@ description: "Capture thoughts instantly. Record, transcribe, organize. Your poc
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.3.0+7
+version: 1.3.1+8
 
 environment:
   sdk: ^3.9.2
@@ -19,12 +19,10 @@ dependencies:
 
   # Audio recording and playback
   record: ^6.1.2
-  audioplayers: ^6.5.1
   path_provider: ^2.1.5
 
   # Audio waveforms - NEW
-  audio_waveforms: ^1.1.0
-  just_audio: ^0.9.42
+  audio_waveforms: ^2.0.2
 
   # State management
   flutter_riverpod: ^3.0.3

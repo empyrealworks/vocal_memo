@@ -1,25 +1,31 @@
 // lib/services/audio_service.dart
+//
+// audioplayers removed. Beeps are played via a short-lived PlayerController
+// after writing the asset bytes to a temp file. This keeps audio_waveforms
+// as the single audio dependency for the whole project.
+
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:flutter/foundation.dart';
-import 'package:record/record.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'dart:io';
 import '../models/recording.dart';
 import '../models/recording_settings.dart';
 
-/// Service for recording audio with proper beep handling
+/// Service for recording audio with optional beep cues.
 ///
-/// Ensures beeps don't bleed into recordings by:
-/// 1. Playing start beep
-/// 2. Waiting for beep to finish
-/// 3. Starting recording
-/// 4. Stopping recording
-/// 5. Playing stop beep
+/// Beep flow (when enabled):
+///   start beep → mic opens → recording → mic closes → stop beep
+///
+/// Beeps are played via a temporary PlayerController. The MP3 asset is
+/// written to the temp directory once per beep call (the OS caches the
+/// write so the second call is negligible).
 class AudioService {
-  final _audioRecorder = AudioRecorder();
-  final _beepPlayer = AudioPlayer();
+  final AudioRecorder _audioRecorder = AudioRecorder();
 
   String? _currentRecordingPath;
   DateTime? _recordingStartTime;
@@ -27,58 +33,75 @@ class AudioService {
   DateTime? _pauseStartTime;
   bool _isPaused = false;
 
+  // Stored at startRecording so stopRecording honours the same setting.
+  bool _enableBeeps = true;
+
   Future<bool> get isRecording => _audioRecorder.isRecording();
 
-  /// Request microphone permission
   Future<bool> requestMicrophonePermission() async {
-    final hasPermission = await _audioRecorder.hasPermission();
-    return hasPermission;
+    return _audioRecorder.hasPermission();
   }
 
-  /// Play a short beep sound
+  // ── Beep ─────────────────────────────────────────────────────────────────
+
+  /// Plays a beep from [assets/sounds/].
   ///
-  /// [isStart] - true for start beep, false for stop beep
-  /// Returns after the beep has finished playing
+  /// Writes the asset bytes to [tempDir] and plays via a short-lived
+  /// [PlayerController]. The controller is disposed after the tone finishes.
   Future<void> _playBeep(bool isStart) async {
+    PlayerController? beepController;
+    File? tempFile;
+
     try {
-      // Generate beep programmatically instead of loading from assets
-      // This ensures the app works even without bundled sound files
+      final assetKey =
+          'assets/sounds/${isStart ? 'start_beep' : 'stop_beep'}.mp3';
 
-      // For start beep: higher pitch (800Hz)
-      // For stop beep: lower pitch (400Hz)
+      // Load asset bytes from bundle.
+      final ByteData byteData = await rootBundle.load(assetKey);
+      final Uint8List bytes = byteData.buffer.asUint8List();
 
-      // Note: Since we can't easily generate audio programmatically in Flutter,
-      // we'll use a short delay instead to simulate the beep gap
-      // In production, you should add actual beep sound files to assets/sounds/
+      // Write to temp dir (reuses same filename each time — no leaking files).
+      final tempDir = await getTemporaryDirectory();
+      final tempPath =
+          '${tempDir.path}/${isStart ? 'start' : 'stop'}_beep.mp3';
+      tempFile = File(tempPath);
+      await tempFile.writeAsBytes(bytes, flush: true);
 
-      // If you have beep files:
-      await _beepPlayer.play(AssetSource(isStart ? 'sounds/start_beep.mp3' : 'sounds/stop_beep.mp3'));
-      await _beepPlayer.onPlayerComplete.first;
+      // Play with a dedicated controller.
+      beepController = PlayerController();
+      await beepController.setFinishMode(finishMode: FinishMode.stop);
+      await beepController.preparePlayer(
+        path: tempPath,
+        shouldExtractWaveform: false,
+      );
+      await beepController.startPlayer();
 
-      // For now, just add a small delay to ensure clean recording start/stop
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Wait for natural completion (with a 3-second safety timeout).
+      await beepController.onCompletion.first
+          .timeout(const Duration(seconds: 3));
 
+      // Extra gap to ensure no bleed into the recording microphone open.
+      await Future.delayed(const Duration(milliseconds: 150));
     } catch (e) {
-      if (kDebugMode) {
-        print('Error playing beep: $e');
-      }
-      // Continue anyway - beeps are nice to have but not critical
+      if (kDebugMode) print('Beep error (non-fatal): $e');
+      // Beeps are optional — recording continues regardless of errors here.
+    } finally {
+      beepController?.dispose();
+      // Temp file is small (<5 KB) and will be overwritten next time.
+      // Only delete on errors; keeping it speeds up the next beep.
     }
   }
 
-  /// Start recording with proper beep handling
+  // ── Recording ─────────────────────────────────────────────────────────────
+
+  /// Starts a recording session.
   ///
-  /// Flow:
-  /// 1. Check permissions
-  /// 2. Play start beep
-  /// 3. Wait for beep to finish
-  /// 4. Start recording
+  /// If [settings.enableBeeps] is true the start beep plays and completes
+  /// before the microphone opens, so it is never captured in the file.
   Future<Recording?> startRecording(RecordingSettings settings) async {
     try {
       final hasPermission = await requestMicrophonePermission();
-      if (!hasPermission) {
-        throw Exception('Microphone permission denied');
-      }
+      if (!hasPermission) throw Exception('Microphone permission denied');
 
       final dir = await getApplicationDocumentsDirectory();
       final recordingsDir = Directory('${dir.path}/recordings');
@@ -89,26 +112,20 @@ class AudioService {
       final fileName = '${const Uuid().v4()}.${settings.audioFormat}';
       _currentRecordingPath = '${recordingsDir.path}/$fileName';
 
-      // Enable wakelock to keep recording active when screen is off
-      await WakelockPlus.enable();
-      if (kDebugMode) {
-        print('🔒 Wakelock enabled - screen can turn off without stopping recording');
-      }
+      _enableBeeps = settings.enableBeeps;
 
-      // IMPORTANT: Play start beep BEFORE starting recording
-      if (kDebugMode) {
-        print('🔊 Playing start beep...');
-      }
-      await _playBeep(true);
-      if (kDebugMode) {
-        print('✅ Start beep finished, beginning recording...');
+      await WakelockPlus.enable();
+
+      if (_enableBeeps) {
+        if (kDebugMode) print('🔊 Playing start beep…');
+        await _playBeep(true);
+        if (kDebugMode) print('✅ Start beep done — opening microphone');
       }
 
       _recordingStartTime = DateTime.now();
       _accumulatedDuration = Duration.zero;
       _isPaused = false;
 
-      // Now start recording - beep won't be captured
       await _audioRecorder.start(
         RecordConfig(
           encoder: _getEncoderFromFormat(settings.audioFormat),
@@ -122,15 +139,10 @@ class AudioService {
         path: _currentRecordingPath!,
       );
 
-      if (kDebugMode) {
-        print('🎙️ Recording started at: $_currentRecordingPath');
-      }
+      if (kDebugMode) print('🎙️ Recording started: $_currentRecordingPath');
       return null;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error starting recording: $e');
-      }
-      // Disable wakelock if recording failed to start
+      if (kDebugMode) print('Error starting recording: $e');
       await WakelockPlus.disable();
       return null;
     }
@@ -138,55 +150,36 @@ class AudioService {
 
   AudioEncoder _getEncoderFromFormat(String format) {
     switch (format) {
-      case 'wav':
-        return AudioEncoder.wav;
-      case 'aac':
-        return AudioEncoder.aacLc;
-      case 'm4a':
-        return AudioEncoder.aacLc;
-      case 'flac':
-        return AudioEncoder.flac;
-      default:
-        return AudioEncoder.aacLc;
+      case 'wav':  return AudioEncoder.wav;
+      case 'aac':  return AudioEncoder.aacLc;
+      case 'm4a':  return AudioEncoder.aacLc;
+      case 'flac': return AudioEncoder.flac;
+      default:     return AudioEncoder.aacLc;
     }
   }
 
-  /// Stop recording with proper beep handling
+  /// Stops the recording and returns the saved [Recording].
   ///
-  /// Flow:
-  /// 1. Stop recording
-  /// 2. Play stop beep
-  /// 3. Return recording object
+  /// The microphone closes first, then the stop beep plays (if enabled),
+  /// so the beep is never captured in the file.
   Future<Recording?> stopRecording() async {
     try {
-      if (kDebugMode) {
-        print('⏹️ Stopping recording...');
-      }
+      if (kDebugMode) print('⏹️ Stopping recording…');
 
-      // IMPORTANT: Stop recording FIRST
       final path = await _audioRecorder.stop();
-
-      // Disable wakelock now that recording is stopped
       await WakelockPlus.disable();
-      if (kDebugMode) {
-        print('🔒 Wakelock disabled - recording stopped - screen can sleep normally');
-      }
 
-      if (path == null || _currentRecordingPath == null) {
-        return null;
-      }
+      if (path == null || _currentRecordingPath == null) return null;
 
-      // Calculate total duration
       if (!_isPaused && _recordingStartTime != null) {
-        _accumulatedDuration += DateTime.now().difference(_recordingStartTime!);
+        _accumulatedDuration +=
+            DateTime.now().difference(_recordingStartTime!);
       }
 
-      if (kDebugMode) {
-        print('✅ Recording stopped, playing stop beep...');
+      if (_enableBeeps) {
+        if (kDebugMode) print('🔊 Playing stop beep…');
+        await _playBeep(false);
       }
-
-      // NOW play stop beep - won't be in the recording
-      await _playBeep(false);
 
       final file = File(path);
       final recording = Recording(
@@ -197,113 +190,79 @@ class AudioService {
         duration: _accumulatedDuration,
       );
 
-      // Reset state
       _currentRecordingPath = null;
       _recordingStartTime = null;
       _pauseStartTime = null;
       _accumulatedDuration = Duration.zero;
       _isPaused = false;
 
-      if (kDebugMode) {
-        print('📝 Recording saved: ${recording.id}');
-      }
+      if (kDebugMode) print('📝 Recording saved: ${recording.id}');
       return recording;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error stopping recording: $e');
-      }
-      // Make sure wakelock is disabled even if there's an error
+      if (kDebugMode) print('Error stopping recording: $e');
       await WakelockPlus.disable();
       return null;
     }
   }
 
-  /// Pause recording
   Future<void> pauseRecording() async {
     try {
       await _audioRecorder.pause();
-
       if (!_isPaused && _recordingStartTime != null) {
-        _accumulatedDuration += DateTime.now().difference(_recordingStartTime!);
+        _accumulatedDuration +=
+            DateTime.now().difference(_recordingStartTime!);
         _pauseStartTime = DateTime.now();
         _isPaused = true;
       }
-
-      if (kDebugMode) {
-        print('⏸️ Recording paused');
-      }
+      if (kDebugMode) print('⏸️ Recording paused');
     } catch (e) {
-      if (kDebugMode) {
-        print('Error pausing recording: $e');
-      }
+      if (kDebugMode) print('Error pausing: $e');
     }
   }
 
-  /// Resume recording
   Future<void> resumeRecording() async {
     try {
       await _audioRecorder.resume();
       _recordingStartTime = DateTime.now();
       _isPaused = false;
-
-      if (kDebugMode) {
-        print('▶️ Recording resumed');
-      }
+      if (kDebugMode) print('▶️ Recording resumed');
     } catch (e) {
-      if (kDebugMode) {
-        print('Error resuming recording: $e');
-      }
+      if (kDebugMode) print('Error resuming: $e');
     }
   }
 
-  /// Stops the recorder and deletes the partial file without saving a Recording.
-  /// Used when the user chooses "Discard" on the exit dialog.
+  Future<void> deleteRecording(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (await file.exists()) await file.delete();
+    } catch (e) {
+      if (kDebugMode) print('Error deleting: $e');
+    }
+  }
+
+  /// Discards the current recording without saving — deletes the partial file.
   Future<void> discardRecording() async {
     try {
       final path = await _audioRecorder.stop();
       await WakelockPlus.disable();
-
-      // Delete the partial file
       if (path != null) {
         final file = File(path);
         if (await file.exists()) await file.delete();
       }
-
-      // Reset state
       _currentRecordingPath = null;
       _recordingStartTime = null;
       _pauseStartTime = null;
       _accumulatedDuration = Duration.zero;
       _isPaused = false;
-
       if (kDebugMode) print('🗑️ Recording discarded');
     } catch (e) {
+      if (kDebugMode) print('Error discarding: $e');
       await WakelockPlus.disable();
-      if (kDebugMode) print('Error discarding recording: $e');
     }
   }
 
-  /// Delete a recording file
-  Future<void> deleteRecording(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (await file.exists()) {
-        await file.delete();
-        if (kDebugMode) {
-          print('🗑️ Deleted recording: $filePath');
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error deleting recording: $e');
-      }
-    }
-  }
-
-  /// Clean up resources
   void dispose() {
     WakelockPlus.disable();
     _audioRecorder.dispose();
-    _beepPlayer.dispose();
   }
 }

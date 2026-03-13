@@ -129,7 +129,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       children: [
         Scaffold(
           appBar: AppBar(
-            title: const Text('Vocal Memo'),
+            title: Row(
+              children: [
+                Image.asset('assets/images/logo.png', width: 40,),
+                const SizedBox(width: 10,),
+                const Text('Vocal Memo', style: TextStyle(fontSize: 22),)
+              ],
+            ),
             elevation: 0,
             actions: [
               IconButton(

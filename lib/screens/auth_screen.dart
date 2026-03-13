@@ -20,6 +20,7 @@ class AuthScreen extends ConsumerStatefulWidget {
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _isSignUp = true;
   bool _isLoading = false;
+  bool _obscurePassword = true;
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -31,9 +32,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     super.dispose();
   }
 
+  // ── Email auth ────────────────────────────────────────────────────────────
+
   Future<void> _handleEmailAuth() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
 
     try {
@@ -44,7 +46,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           _emailController.text.trim(),
           _passwordController.text,
         );
-
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -59,35 +60,29 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           _emailController.text.trim(),
           _passwordController.text,
         );
+
         final recordingService = ref.read(recordingProvider.notifier);
         await recordingService.restoreFromCloud();
 
-        if (mounted) {
-          Navigator.pop(context);
-        }
+        if (mounted) Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // ── Google sign-in ────────────────────────────────────────────────────────
+
   Future<void> _handleGoogleSignIn() async {
     setState(() => _isLoading = true);
-
     try {
-      final authService = ref.read(authServiceProvider);
-      await authService.signInWithGoogle();
+      await ref.read(authServiceProvider).signInWithGoogle();
 
       final recordingService = ref.read(recordingProvider.notifier);
       await recordingService.restoreFromCloud();
@@ -95,7 +90,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Sign in successful!'),
+            content: Text('Signed in successfully!'),
             backgroundColor: AppTheme.teal,
           ),
         );
@@ -104,18 +99,228 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  // ── Forgot password ───────────────────────────────────────────────────────
+
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController(
+      // Pre-fill if the user already typed their email.
+      text: _emailController.text.trim(),
+    );
+    bool sending = false;
+    bool sent = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: !sending,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Icon + title
+                    Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: AppTheme.teal.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.lock_reset_rounded,
+                            color: AppTheme.teal,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Reset Password',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (sent) ...[
+                      // ── Success state ──────────────────────────────────
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.teal.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppTheme.teal.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle_outline,
+                                color: AppTheme.teal, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'A reset link has been sent to ${emailController.text.trim()}. '
+                                    'Check your inbox (and spam folder).',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.teal,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Done',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      // ── Input state ────────────────────────────────────
+                      Text(
+                        "Enter your account email and we'll send you a reset link.",
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: InputDecoration(
+                          labelText: 'Email',
+                          prefixIcon: const Icon(Icons.email_outlined),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: sending
+                                  ? null
+                                  : () => Navigator.pop(dialogContext),
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                const EdgeInsets.symmetric(vertical: 12),
+                                side: const BorderSide(
+                                    color: AppTheme.mediumGray),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: sending
+                                  ? null
+                                  : () async {
+                                final email =
+                                emailController.text.trim();
+                                if (email.isEmpty ||
+                                    !email.contains('@')) {
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Please enter a valid email'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setDialogState(() => sending = true);
+                                try {
+                                  await ref
+                                      .read(authServiceProvider)
+                                      .sendPasswordResetEmail(email);
+                                  setDialogState(() {
+                                    sending = false;
+                                    sent = true;
+                                  });
+                                } catch (e) {
+                                  setDialogState(
+                                          () => sending = false);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      SnackBar(
+                                        content:
+                                        Text(e.toString()),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.orange,
+                                padding:
+                                const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              child: sending
+                                  ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                                  : const Text(
+                                'Send Link',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -134,7 +339,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
             const SizedBox(height: 32),
 
-            // Email/Password Form
+            // ── Email / Password form ──────────────────────────────────────
             Form(
               key: _formKey,
               child: Column(
@@ -148,7 +353,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      prefixIcon: const Icon(Icons.email),
+                      prefixIcon: const Icon(Icons.email_outlined),
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
@@ -163,14 +368,25 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _passwordController,
-                    obscureText: true,
-                    autofillHints: _isSignUp ? const [AutofillHints.newPassword]: const [AutofillHints.password],
+                    obscureText: _obscurePassword,
+                    autofillHints: _isSignUp
+                        ? const [AutofillHints.newPassword]
+                        : const [AutofillHints.password],
                     decoration: InputDecoration(
                       labelText: 'Password',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      prefixIcon: const Icon(Icons.lock),
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscurePassword = !_obscurePassword),
+                      ),
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
@@ -182,7 +398,27 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 24),
+
+                  // ── Forgot password (sign-in mode only) ───────────────
+                  if (!_isSignUp)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _isLoading ? null : _showForgotPasswordDialog,
+                        child: const Text(
+                          'Forgot password?',
+                          style: TextStyle(
+                            color: AppTheme.teal,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  const SizedBox(height: 8),
+
+                  if (_isSignUp) const SizedBox(height: 8),
+
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -219,7 +455,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
             const SizedBox(height: 24),
 
-            // Divider
+            // ── Divider ───────────────────────────────────────────────────
             Row(
               children: [
                 const Expanded(child: Divider()),
@@ -236,7 +472,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
             const SizedBox(height: 24),
 
-            // Google Sign In
+            // ── Google sign-in ────────────────────────────────────────────
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -259,15 +495,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
             const SizedBox(height: 16),
 
-            // Toggle Sign In / Sign Up
+            // ── Toggle sign-in / sign-up ──────────────────────────────────
             TextButton(
-              onPressed: () {
-                setState(() => _isSignUp = !_isSignUp);
-              },
+              onPressed: () => setState(() => _isSignUp = !_isSignUp),
               child: Text(
                 _isSignUp
                     ? 'Already have an account? Sign in'
-                    : 'Don\'t have an account? Sign up',
+                    : "Don't have an account? Sign up",
               ),
             ),
           ],
@@ -275,6 +509,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       ),
     );
   }
+
+  // ── Benefits panel ────────────────────────────────────────────────────────
 
   Widget _buildBenefits() {
     return Container(
@@ -300,12 +536,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          _buildBenefit(Icons.cloud_upload, 'Cloud Backup',
-              'Never lose your recordings and transcripts'),
+          _buildBenefit(
+              Icons.cloud_upload, 'Cloud Backup', 'Never lose your recordings'),
           _buildBenefit(Icons.auto_awesome, 'Better AI Model',
               'Gemini 2.5 Flash for accurate transcriptions'),
-          _buildBenefit(Icons.content_cut, 'Audio Trimming',
-              'Edit and trim your recordings'),
+          _buildBenefit(
+              Icons.content_cut, 'Audio Trimming', 'Edit and trim recordings'),
           _buildBenefit(Icons.sync, 'Cross-Device Sync',
               'Access your data on any device'),
         ],
@@ -324,13 +560,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
+                Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14)),
                 Text(
                   description,
                   style: TextStyle(

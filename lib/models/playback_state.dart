@@ -1,5 +1,10 @@
 // lib/models/playback_state.dart
-import 'package:audioplayers/audioplayers.dart';
+//
+// PlayerState is imported from audio_waveforms (not audioplayers).
+// audio_waveforms exports: PlayerState.playing / .paused / .stopped / .initialized
+// The isPlaying / isPaused / isStopped getters work identically.
+
+import 'package:audio_waveforms/audio_waveforms.dart';
 
 class PlaybackState {
   final String? currentFilePath;
@@ -19,7 +24,7 @@ class PlaybackState {
   });
 
   bool get isPlaying => playerState == PlayerState.playing;
-  bool get isPaused => playerState == PlayerState.paused;
+  bool get isPaused  => playerState == PlayerState.paused;
   bool get isStopped => playerState == PlayerState.stopped;
 
   double get progress {
@@ -37,10 +42,10 @@ class PlaybackState {
   }) =>
       PlaybackState(
         currentFilePath: currentFilePath ?? this.currentFilePath,
-        duration: duration ?? this.duration,
-        position: position ?? this.position,
-        playerState: playerState ?? this.playerState,
-        playbackSpeed: playbackSpeed ?? this.playbackSpeed,
-        isLoading: isLoading ?? this.isLoading,
+        duration:        duration        ?? this.duration,
+        position:        position        ?? this.position,
+        playerState:     playerState     ?? this.playerState,
+        playbackSpeed:   playbackSpeed   ?? this.playbackSpeed,
+        isLoading:       isLoading       ?? this.isLoading,
       );
 }
