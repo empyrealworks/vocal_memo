@@ -129,26 +129,29 @@ class _BannerStrip extends StatelessWidget {
   final bool isExpanded;
   final VoidCallback toggleExpanded;
 
-  const _BannerStrip({required this.isOnline, required this.isExpanded, required this.toggleExpanded,});
+  const _BannerStrip({
+    required this.isOnline,
+    required this.isExpanded,
+    required this.toggleExpanded,
+  });
 
   @override
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
-    return Container(
-      width: double.infinity,
-      color: Colors.transparent,
+    // Swapped Container for Padding so empty space doesn't block touches
+    return Padding(
       padding: EdgeInsets.fromLTRB(16, 8, 16, 8 + bottomPadding),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-            onPressed: toggleExpanded,
-            icon: Icon(
-              isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-              color: isOnline ? Colors.green : Colors.red,
-              size: 24,
-            )
+              onPressed: toggleExpanded,
+              icon: Icon(
+                isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                color: isOnline ? Colors.green : Colors.red,
+                size: 24,
+              )
           ),
           if (isExpanded) ...[
             const SizedBox(width: 8),
@@ -159,7 +162,7 @@ class _BannerStrip extends StatelessWidget {
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
-    ),
+            ),
           ]
         ],
       ),

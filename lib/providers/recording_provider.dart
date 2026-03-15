@@ -1,5 +1,7 @@
 // lib/providers/recording_provider.dart
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../models/recording.dart';
@@ -18,55 +20,162 @@ import 'connectivity_provider.dart';
 final audioServiceProvider = Provider((ref) => AudioService());
 final storageServiceProvider = Provider((ref) => StorageService());
 
-// ─── Backup result ─────────────────────────────────────────────────────────────
-
-/// The outcome of a [RecordingNotifier.backupRecording] call.
-sealed class BackupResult {}
-
-/// The upload completed successfully. [url] is the Firebase download URL.
-class BackupSuccess extends BackupResult {
-  final String url;
-  BackupSuccess(this.url);
-}
-
-/// The device was offline. The job has been queued and will be processed
-/// automatically when connectivity is restored.
-class BackupQueued extends BackupResult {}
-
-/// The upload failed for a non-network reason.
-class BackupFailed extends BackupResult {
-  final String message;
-  BackupFailed(this.message);
-}
-
 // ─── Recording state notifier ──────────────────────────────────────────────────
 
+/// Manages the list of recordings and coordinates between local Hive storage
+/// and Firestore real-time sync.
+///
+/// ## Data flow (registered users)
+///
+///   Write path  : UI calls a mutating method (e.g. [updateRecording])
+///                 → Hive updated immediately (optimistic, no round-trip wait)
+///                 → state updated immediately (UI sees change at once)
+///                 → Firestore written asynchronously
+///                 → Firestore stream fires on ALL devices (including this one)
+///                 → [_onFirestoreSnapshot] merges the echo idempotently
+///
+///   Remote change: Another device writes to Firestore
+///                  → Firestore stream fires on THIS device
+///                  → [_onFirestoreSnapshot] merges with local state,
+///                    preserving this device's filePath / waveformData
+///                  → state updated → UI rebuilds
+///
+/// ## Data flow (unregistered users)
+///
+///   All operations use Hive only. No Firestore connection is opened.
+///
+/// ## Firestore cost notes
+///
+///   - One `snapshots()` listener per user session (not per screen/widget).
+///   - Initial load: 1 read per document in the collection.
+///   - Each subsequent event: 1 read per *changed* document only.
+///   - Listener is cancelled in [dispose] — called when the provider is
+///     rebuilt due to auth state change (sign-in / sign-out).
 class RecordingNotifier extends StateNotifier<List<Recording>> {
   final AudioService _audioService;
   final StorageService _storageService;
   final CloudSyncService _cloudSyncService;
   final FirebaseStorageService _firebaseStorageService;
+
+  /// Null means the user is not signed in — Hive-only mode.
+  final String? _userId;
   final ConnectivityService _connectivity;
   final SyncQueueService _syncQueue;
 
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _firestoreSub;
   bool _isRecording = false;
 
-  RecordingNotifier(
-      this._audioService,
-      this._storageService,
-      this._cloudSyncService,
-      this._firebaseStorageService,
-      this._connectivity,
-      this._syncQueue,
-      ) : super([]) {
-    _loadRecordings();
+  RecordingNotifier({
+    required AudioService audioService,
+    required StorageService storageService,
+    required CloudSyncService cloudSyncService,
+    required FirebaseStorageService firebaseStorageService,
+    required String? userId,
+    required ConnectivityService connectivity,
+    required SyncQueueService syncQueue,
+  })  : _audioService = audioService,
+        _storageService = storageService,
+        _cloudSyncService = cloudSyncService,
+        _firebaseStorageService = firebaseStorageService,_connectivity = connectivity,
+        _syncQueue = syncQueue,
+        _userId = userId,
+        super([]) {
+    if (_userId != null) {
+      _subscribeToFirestore();
+    } else {
+      _loadFromHive();
+    }
   }
 
   bool get isRecording => _isRecording;
 
-  Future<void> _loadRecordings() async {
-    state = await _storageService.getAllRecordings();
+  @override
+  void dispose() {
+    _firestoreSub?.cancel();
+    super.dispose();
   }
+
+  // ─── Firestore stream ─────────────────────────────────────────
+
+  void _subscribeToFirestore() {
+    // Show local data immediately while the network call loads
+    _loadFromHive();
+
+    _firestoreSub = _cloudSyncService
+        .watchRecordingsSnapshot()
+        .listen(_onFirestoreSnapshot, onError: (Object e) {
+      debugPrint('⚠️ Firestore recordings stream error: $e');
+      // Do not crash — local Hive state is still valid
+    });
+  }
+
+  /// Handles a Firestore snapshot event.
+  ///
+  /// Uses [QuerySnapshot.docChanges] to process only the delta:
+  ///   - Added / modified documents → merge with local state
+  ///   - Removed documents → remove from state and Hive
+  ///
+  /// Merge strategy for added/modified records:
+  ///   - [filePath]     : local value wins (device-specific absolute path)
+  ///   - [waveformData] : local value wins (generated from the local audio file)
+  ///   - Everything else: cloud value wins (title, transcript, pin, etc.)
+  Future<void> _onFirestoreSnapshot(
+      QuerySnapshot<Map<String, dynamic>> snapshot) async {
+    if (!mounted) return;
+
+    // Nothing changed — Firestore fires an initial empty event sometimes
+    if (snapshot.docChanges.isEmpty) return;
+
+    // Build a fast lookup of the current in-memory state
+    final localMap = {for (final r in state) r.id: r};
+
+    // Track which IDs were removed on the cloud side
+    final removedIds = <String>{};
+
+    for (final change in snapshot.docChanges) {
+      final id = change.doc.id;
+
+      switch (change.type) {
+        case DocumentChangeType.removed:
+          removedIds.add(id);
+          localMap.remove(id);
+          // Remove from Hive cache too — fire-and-forget
+          _storageService.deleteRecording(id).ignore();
+
+        case DocumentChangeType.added:
+        case DocumentChangeType.modified:
+          final cloudRec = Recording.fromJson(change.doc.data()!);
+          final existing = localMap[id];
+
+          final merged = cloudRec.copyWith(
+            // Preserve device-local path — cloud carries fileName + backupUrl
+            // so any device can re-resolve it if needed
+            filePath: existing?.filePath?.isNotEmpty == true
+                ? existing!.filePath
+                : cloudRec.filePath,
+            // Preserve locally-generated waveform data
+            waveformData: existing?.waveformData ?? cloudRec.waveformData,
+          );
+
+          localMap[id] = merged;
+
+          // Write the merged record to Hive asynchronously (offline cache)
+          _storageService.updateRecording(merged).ignore();
+      }
+    }
+
+    if (!mounted) return;
+    state = _sortRecordings(localMap.values);
+  }
+
+  // ─── Hive (offline / unregistered) ───────────────────────────
+
+  Future<void> _loadFromHive() async {
+    final recordings = await _storageService.getAllRecordings();
+    if (mounted) state = recordings;
+  }
+
+  // ─── Sort helper ──────────────────────────────────────────────
 
   List<Recording> _sortRecordings(Iterable<Recording> recordings) {
     final list = recordings.toList();
@@ -88,8 +197,12 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
     final recording = await _audioService.stopRecording();
     _isRecording = false;
     if (recording != null) {
+      // 1. Persist locally
       await _storageService.saveRecording(recording);
-      await _loadRecordings();
+      // 2. Optimistic UI update (Hive → state)
+      await _loadFromHive();
+      // 3. Push to Firestore — stream will echo back to all devices
+      await _cloudSyncService.syncRecordingToCloud(recording);
     }
   }
 
@@ -103,19 +216,37 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
 
   Future<void> deleteRecording(String id) async {
     final recording = state.firstWhere((r) => r.id == id);
+
+    // Optimistic removal from state
+    state = state.where((r) => r.id != id).toList();
+
     await _audioService.deleteRecording(recording.filePath);
     await _storageService.deleteRecording(id);
+
     if (recording.isBackedUp) {
       await _firebaseStorageService.deleteRecording(id);
     }
+    // Deleting from Firestore triggers the stream's `removed` event on all
+    // other devices, which removes the recording from their state too.
     await _cloudSyncService.deleteRecordingFromCloud(id);
-    await _loadRecordings();
   }
 
+  /// Updates a recording locally and pushes the change to Firestore.
+  ///
+  /// The optimistic local update ensures the UI responds instantly on this
+  /// device. The Firestore write propagates the change to all other devices
+  /// via the [_onFirestoreSnapshot] stream handler.
   Future<void> updateRecording(Recording recording) async {
+    // 1. Update Hive
     await _storageService.updateRecording(recording);
+
+    // 2. Optimistic state update — Firestore echo will be idempotent
+    state = _sortRecordings(
+      state.map((r) => r.id == recording.id ? recording : r),
+    );
+
+    // 3. Push to Firestore (triggers stream on all devices)
     await _cloudSyncService.syncRecordingToCloud(recording);
-    await _loadRecordings();
   }
 
   Future<void> toggleFavorite(String id) async {
@@ -129,77 +260,29 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
     await updateRecording(recording.copyWith(isPinned: !recording.isPinned));
   }
 
-  Future<void> refreshRecordings() async => _loadRecordings();
+  /// Forces a re-read from Hive. Useful after audio file restoration so the
+  /// correct local [filePath] is reflected in state before the next Firestore
+  /// stream event.
+  Future<void> refreshRecordings() async => _loadFromHive();
 
   // ─── Cloud backup ─────────────────────────────────────────────
 
-  /// Uploads a recording's audio to Firebase Storage.
-  ///
-  /// Returns a [BackupResult]:
-  /// - [BackupSuccess] — upload complete, recording updated locally + in cloud.
-  /// - [BackupQueued]  — device is offline; job saved to the sync queue and
-  ///                     will be processed automatically when back online.
-  /// - [BackupFailed]  — upload failed for a non-network reason.
-  Future<BackupResult> backupRecordingWithResult(
-      Recording recording, {
-        void Function(double progress)? onProgress,
-      }) async {
-    // ── Offline fast-path ──────────────────────────────────────
-    if (!_connectivity.isOnline) {
-      await _syncQueue.enqueue(PendingSyncJob(
-        recordingId: recording.id,
-        filePath: recording.filePath,
-        enqueuedAt: DateTime.now(),
-      ));
-      return BackupQueued();
-    }
-
-    try {
-      final downloadUrl = await _firebaseStorageService.uploadRecording(
-        recording.filePath,
-        recording.id,
-        onProgress: onProgress,
-      );
-
-      if (downloadUrl != null) {
-        final updated = recording.copyWith(backupUrl: downloadUrl);
-        await _storageService.updateRecording(updated);
-        await _cloudSyncService.syncRecordingToCloud(updated);
-        await _loadRecordings();
-        return BackupSuccess(downloadUrl);
-      }
-      return BackupFailed('Upload failed. Please try again.');
-    } on OfflineException catch (e) {
-      // Connectivity dropped mid-attempt — enqueue for later
-      await _syncQueue.enqueue(PendingSyncJob(
-        recordingId: recording.id,
-        filePath: recording.filePath,
-        enqueuedAt: DateTime.now(),
-      ));
-      debugPrint('⏭️ Backup queued (went offline): ${recording.id} — $e');
-      return BackupQueued();
-    } on TransferInterruptedException catch (e) {
-      await _syncQueue.enqueue(PendingSyncJob(
-        recordingId: recording.id,
-        filePath: recording.filePath,
-        enqueuedAt: DateTime.now(),
-      ));
-      debugPrint('⏭️ Backup queued (transfer interrupted): ${recording.id} — $e');
-      return BackupQueued();
-    } catch (e) {
-      debugPrint('❌ Backup failed: ${recording.id} — $e');
-      return BackupFailed(e.toString());
-    }
-  }
-
-  /// Legacy wrapper for callers that only care about the download URL.
-  /// Returns the URL on success, or null on failure / when queued.
   Future<String?> backupRecording(
       Recording recording, {
         void Function(double progress)? onProgress,
       }) async {
-    final result = await backupRecordingWithResult(recording, onProgress: onProgress);
-    return result is BackupSuccess ? result.url : null;
+    final downloadUrl = await _firebaseStorageService.uploadRecording(
+      recording.filePath,
+      recording.id,
+      onProgress: onProgress,
+    );
+
+    if (downloadUrl != null) {
+      final updated = recording.copyWith(backupUrl: downloadUrl);
+      await updateRecording(updated);
+    }
+
+    return downloadUrl;
   }
 
   // ─── Sync queue drain ─────────────────────────────────────────
@@ -209,6 +292,7 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
   /// Called automatically when connectivity is restored (see [main.dart]).
   /// [onJobComplete] fires after each successfully synced recording so the UI
   /// can show a per-item notification.
+
   Future<void> drainSyncQueue({
     void Function(String recordingId)? onJobComplete,
   }) async {
@@ -221,7 +305,6 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
 
     for (final job in pending) {
       try {
-        // Re-fetch the recording in case it was updated/deleted locally
         final matches = state.where((r) => r.id == job.recordingId).toList();
         if (matches.isEmpty) {
           await _syncQueue.remove(job.recordingId);
@@ -244,20 +327,21 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
         }
       } on OfflineException {
         debugPrint('⚠️ Sync queue: went offline again, stopping drain');
-        break; // Stop draining — we're offline again
+        break;
       } on TransferInterruptedException {
         debugPrint('⚠️ Sync queue: transfer interrupted, stopping drain');
         break;
       } catch (e) {
         debugPrint('❌ Sync queue: error processing ${job.recordingId}: $e');
-        // Leave the job in the queue for the next drain attempt
       }
     }
 
-    await _loadRecordings();
+    // You might need to change this if Claude replaced _loadRecordings()
+    // with a stream subscription, but keeping it won't hurt.
+    // await _loadRecordings();
   }
 
-  // ─── Cloud restore  (called on login / fresh install) ─────────
+  // ─── Cloud restore  (first login) ────────────────────────────
 
   Future<void> restoreFromCloud() async {
     final cloudRecordings = await _cloudSyncService.restoreFromCloud(
@@ -267,6 +351,7 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
 
     if (cloudRecordings.isEmpty) return;
 
+    // Merge cloud into current in-memory state (cloud wins on conflict)
     final merged = <String, Recording>{
       for (final r in state) r.id: r,
       for (final r in cloudRecordings) r.id: r,
@@ -278,21 +363,36 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
 
 // ─── Providers ─────────────────────────────────────────────────────────────────
 
+/// The recording provider watches [authStateProvider] so that a new
+/// [RecordingNotifier] is created each time the user signs in or out.
+///
+/// On sign-in:  new notifier created with [userId] set → subscribes to
+///              Firestore stream → real-time multi-device sync begins.
+/// On sign-out: old notifier disposed → [_firestoreSub] cancelled
+///              (no ongoing Firestore reads) → new notifier created with
+///              [userId] == null → Hive-only mode.
 final recordingProvider =
 StateNotifierProvider<RecordingNotifier, List<Recording>>((ref) {
+  // Watch auth state — provider rebuilds (and notifier is recreated)
+  // whenever the user signs in or out.
+  final authState = ref.watch(authStateProvider);
+  final userId = authState.value?.uid; // null while loading or signed out
+
   final audioService = ref.watch(audioServiceProvider);
   final storageService = ref.watch(storageServiceProvider);
   final cloudSyncService = ref.watch(cloudSyncServiceProvider);
   final firebaseStorageService = ref.watch(firebaseStorageServiceProvider);
   final connectivity = ref.watch(connectivityServiceProvider);
   final syncQueue = ref.watch(syncQueueServiceProvider);
+
   return RecordingNotifier(
-    audioService,
-    storageService,
-    cloudSyncService,
-    firebaseStorageService,
-    connectivity,
-    syncQueue,
+    audioService: audioService,
+    storageService: storageService,
+    cloudSyncService: cloudSyncService,
+    firebaseStorageService: firebaseStorageService,
+    userId: userId,
+    connectivity: connectivity,
+    syncQueue: syncQueue,
   );
 });
 
@@ -311,18 +411,9 @@ FutureProvider<List<Recording>>((ref) async {
   return recordings.where((r) => r.isFavorite).toList();
 });
 
-// ─── Backup state per recording ────────────────────────────────────────────────
+// ─── Backup progress ───────────────────────────────────────────────────────────
 
-/// Tracks per-recording backup state.
-///
-/// Values:
-/// - null       → idle
-/// - 0.0 – 1.0  → upload progress
-/// - -1.0       → error
-/// - -2.0       → queued (offline, will sync when back online)
+/// Tracks per-recording backup progress (0.0–1.0) and status.
+/// null = idle, -1.0 = error.
 final backupProgressProvider =
 StateProvider.family<double?, String>((ref, recordingId) => null);
-
-/// Convenience constant so call sites don't use magic numbers.
-const double kBackupQueued = -2.0;
-const double kBackupError = -1.0;
