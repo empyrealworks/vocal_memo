@@ -7,25 +7,16 @@ import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/firebase_storage_service.dart';
 import '../services/rate_limit_service.dart';
+import 'connectivity_provider.dart';
 
-// ─── Core auth ─────────────────────────────────────────────────────────────────
-
-final authServiceProvider = Provider<AuthService>((ref) => AuthService());
-
-final authStateProvider = StreamProvider<User?>((ref) {
-  return ref.watch(authServiceProvider).authStateChanges;
+final authServiceProvider = Provider<AuthService>((ref) {
+  return AuthService();
 });
-
-// ─── Cloud services ────────────────────────────────────────────────────────────
 
 final cloudSyncServiceProvider = Provider<CloudSyncService>((ref) {
   final authService = ref.watch(authServiceProvider);
-  return CloudSyncService(authService);
-});
-
-final firebaseStorageServiceProvider = Provider<FirebaseStorageService>((ref) {
-  final authService = ref.watch(authServiceProvider);
-  return FirebaseStorageService(authService);
+  final connectivity = ref.watch(connectivityServiceProvider);
+  return CloudSyncService(authService, connectivity);
 });
 
 final rateLimitServiceProvider = Provider<RateLimitService>((ref) {
@@ -33,60 +24,63 @@ final rateLimitServiceProvider = Provider<RateLimitService>((ref) {
   return RateLimitService(authService);
 });
 
-// ─── Derived auth state ────────────────────────────────────────────────────────
+final firebaseStorageServiceProvider = Provider<FirebaseStorageService>((ref) {
+  final authService = ref.watch(authServiceProvider);
+  final connectivity = ref.watch(connectivityServiceProvider);
+  return FirebaseStorageService(authService, connectivity);
+});
+
+final authStateProvider = StreamProvider<User?>((ref) {
+  final authService = ref.watch(authServiceProvider);
+  return authService.authStateChanges;
+});
 
 final userTierProvider = Provider<UserTier>((ref) {
   ref.watch(authStateProvider);
-  return ref.watch(authServiceProvider).userTier;
+  final authService = ref.watch(authServiceProvider);
+  return authService.userTier;
 });
 
 final geminiModelProvider = Provider<String>((ref) {
   ref.watch(authStateProvider);
-  return ref.watch(authServiceProvider).geminiModel;
+  final authService = ref.watch(authServiceProvider);
+  return authService.geminiModel;
 });
 
 final canTranscribeProvider = Provider<bool>((ref) {
   ref.watch(authStateProvider);
-  return ref.watch(authServiceProvider).canTranscribe;
+  final authService = ref.watch(authServiceProvider);
+  return authService.canTranscribe;
 });
 
 final canTrimProvider = Provider<bool>((ref) {
   ref.watch(authStateProvider);
-  return ref.watch(authServiceProvider).canTrim;
+  final authService = ref.watch(authServiceProvider);
+  return authService.canTrim;
 });
 
 final dailyUsageProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   ref.watch(authStateProvider);
   final rateLimitService = ref.watch(rateLimitServiceProvider);
-  return rateLimitService.getTodayUsage();
+  return await rateLimitService.getTodayUsage();
 });
 
-// ─── Audio file restore on first login ────────────────────────────────────────
-//
-// NOTE ON ARCHITECTURE:
-//
-// Real-time metadata sync (title, transcript, pin, etc.) is now handled
-// entirely by the Firestore snapshots() stream inside [RecordingNotifier].
-// The provider below ([cloudRestoreProvider]) has a narrower job: it runs
-// once per login session to download any missing AUDIO FILES from Firebase
-// Storage and write the correct device-local filePath to Hive.
-//
-// Metadata does NOT need to be fetched here — the stream handles that.
-// If there is nothing to download (e.g. the user is on their original device
-// and files already exist locally), this provider completes almost instantly.
+// ─── Cloud restore on login ────────────────────────────────────────────────────
 
+/// Tracks whether a cloud restore has been attempted in this session so we
+/// don't re-run it on every auth state rebuild.
 final _restoreAttemptedProvider = StateProvider<bool>((ref) => false);
 
-/// Triggers a one-time audio file restore on first login.
-///
-/// Consume this in your root widget to activate it:
-///   `ref.watch(cloudRestoreProvider);`
+/// Watches auth state and triggers a one-time cloud restore on first login.
+/// Consume this provider in your root widget (e.g. in [main.dart] or
+/// [home_screen.dart]) to activate it: `ref.watch(cloudRestoreProvider)`.
 final cloudRestoreProvider = FutureProvider<void>((ref) async {
   final authState = ref.watch(authStateProvider);
   final user = authState.value;
 
+  // Only run when the user is signed in
   if (user == null) {
-    // Reset so the restore runs again after re-login
+    // Reset flag on sign-out so the restore runs again after re-login
     ref.read(_restoreAttemptedProvider.notifier).state = false;
     return;
   }
@@ -94,20 +88,18 @@ final cloudRestoreProvider = FutureProvider<void>((ref) async {
   final alreadyAttempted = ref.watch(_restoreAttemptedProvider);
   if (alreadyAttempted) return;
 
-  // Mark before starting to avoid concurrent re-triggers
+  // Mark as attempted before starting so concurrent rebuilds don't retrigger
   ref.read(_restoreAttemptedProvider.notifier).state = true;
 
   final cloudSyncService = ref.read(cloudSyncServiceProvider);
   final firebaseStorageService = ref.read(firebaseStorageServiceProvider);
   final localStorageService = ref.read(storageServiceProvider);
 
-  // This only downloads audio files — metadata comes via the stream
   await cloudSyncService.restoreFromCloud(
     storageService: firebaseStorageService,
     localStorageService: localStorageService,
   );
 
-  // Refresh local state so the newly-resolved filePaths are visible
-  // before the next Firestore stream event fires
+  // Refresh the recording list after restore
   ref.read(recordingProvider.notifier).refreshRecordings();
 });
