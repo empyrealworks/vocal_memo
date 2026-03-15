@@ -36,6 +36,13 @@ class RecordingSettings extends HiveObject {
   @HiveField(9)
   bool enableBeeps;
 
+  // HiveField(10) — added in v1.4.0.
+  // When true, audio files are automatically downloaded to each signed-in
+  // device whenever a new recording appears via the Firestore snapshot stream
+  // or on sign-in. When false, the user downloads audio manually from the card.
+  @HiveField(10)
+  bool autoDownloadAudio;
+
   RecordingSettings({
     this.autoGainControl = true,
     this.noiseSuppression = true,
@@ -47,6 +54,7 @@ class RecordingSettings extends HiveObject {
     this.showWaveform = true,
     this.themeMode = "System",
     this.enableBeeps = true,
+    this.autoDownloadAudio = false,
   });
 
   RecordingSettings copyWith({
@@ -60,6 +68,7 @@ class RecordingSettings extends HiveObject {
     bool? showWaveform,
     String? themeMode,
     bool? enableBeeps,
+    bool? autoDownloadAudio,
   }) {
     return RecordingSettings(
       autoGainControl: autoGainControl ?? this.autoGainControl,
@@ -72,6 +81,7 @@ class RecordingSettings extends HiveObject {
       showWaveform: showWaveform ?? this.showWaveform,
       themeMode: themeMode ?? this.themeMode,
       enableBeeps: enableBeeps ?? this.enableBeeps,
+      autoDownloadAudio: autoDownloadAudio ?? this.autoDownloadAudio,
     );
   }
 }

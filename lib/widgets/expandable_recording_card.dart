@@ -51,6 +51,12 @@ class _ExpandableRecordingCardState
   double _backupProgress = 0.0;
   String? _backupError;
 
+  // Download state (for recordings whose audio isn't local yet)
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
+  String? _downloadError;
+  bool _audioAvailableLocally = false;
+
   // First-expand feature hints
   bool _showCardHints = false;
 
@@ -58,6 +64,32 @@ class _ExpandableRecordingCardState
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.recording.title);
+    _checkAudioAvailability();
+  }
+
+  void _checkAudioAvailability() async {
+    final exists = await File(widget.recording.filePath).exists();
+    if (mounted) setState(() => _audioAvailableLocally = exists);
+  }
+
+  @override
+  void didUpdateWidget(covariant ExpandableRecordingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Re-check local file if the recording was updated (e.g. after a download)
+    if (oldWidget.recording.filePath != widget.recording.filePath ||
+        oldWidget.recording.backupUrl != widget.recording.backupUrl) {
+      _checkAudioAvailabilityAndMaybeInitWaveform();
+    }
+  }
+
+  void _checkAudioAvailabilityAndMaybeInitWaveform() async {
+    final exists = await File(widget.recording.filePath).exists();
+    if (!mounted) return;
+    setState(() => _audioAvailableLocally = exists);
+    // If the card is already expanded and we just got audio, load the waveform
+    if (_isExpanded && exists && _waveformController == null) {
+      _initializeWaveform();
+    }
   }
 
   @override
@@ -83,7 +115,9 @@ class _ExpandableRecordingCardState
   void _toggleExpanded() {
     setState(() => _isExpanded = !_isExpanded);
     if (_isExpanded) {
-      _initializeWaveform();
+      if (_audioAvailableLocally) {
+        _initializeWaveform();
+      }
     } else {
       _collapseCleanup();
     }
@@ -110,6 +144,7 @@ class _ExpandableRecordingCardState
   // ── Waveform / player initialisation ─────────────────────────────────────
 
   void _initializeWaveform() async {
+    if (!_audioAvailableLocally) return; // No local file — nothing to load
     try {
       _waveformController = PlayerController();
 
@@ -123,8 +158,8 @@ class _ExpandableRecordingCardState
 
       // State stream — keep _isPlaying in sync.
       _playerStateSub = _waveformController!.onPlayerStateChanged.listen((
-        state,
-      ) {
+          state,
+          ) {
         if (!mounted) return;
         setState(() => _isPlaying = state == PlayerState.playing);
       });
@@ -226,11 +261,11 @@ class _ExpandableRecordingCardState
       final downloadUrl = await ref
           .read(recordingProvider.notifier)
           .backupRecording(
-            widget.recording,
-            onProgress: (progress) {
-              if (mounted) setState(() => _backupProgress = progress);
-            },
-          );
+        widget.recording,
+        onProgress: (progress) {
+          if (mounted) setState(() => _backupProgress = progress);
+        },
+      );
 
       if (mounted) {
         if (downloadUrl != null) {
@@ -266,6 +301,67 @@ class _ExpandableRecordingCardState
         setState(() {
           _isBackingUp = false;
           _backupProgress = 0.0;
+        });
+      }
+    }
+  }
+
+  Future<void> _downloadAudio() async {
+    if (_isDownloading) return;
+
+    setState(() {
+      _isDownloading = true;
+      _downloadProgress = 0.0;
+      _downloadError = null;
+    });
+
+    try {
+      final localPath = await ref
+          .read(recordingProvider.notifier)
+          .downloadAudioLocally(widget.recording);
+
+      if (mounted) {
+        if (localPath != null) {
+          setState(() => _audioAvailableLocally = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Audio downloaded ✓'),
+              backgroundColor: AppTheme.teal,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          // If card is expanded, now we can load the waveform
+          if (_isExpanded && _waveformController == null) {
+            _initializeWaveform();
+          }
+        } else {
+          setState(() => _downloadError = 'Download failed');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Download failed. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        final message = e.toString().contains('offline') || e.toString().contains('Offline')
+            ? 'You\'re offline. Connect to download.'
+            : 'Download error: $e';
+        setState(() => _downloadError = e.toString());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+          _downloadProgress = 0.0;
         });
       }
     }
@@ -468,60 +564,91 @@ class _ExpandableRecordingCardState
           if (_isExpanded) ...[
             const SizedBox(height: 16),
 
-            // Waveform Area
-            WaveformPlayerArea(
-              controller: _waveformController,
-            ),
+            // Waveform Area — or placeholder when audio not yet downloaded
+            if (_audioAvailableLocally)
+              WaveformPlayerArea(
+                controller: _waveformController,
+              )
+            else
+              Container(
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppTheme.mediumGray.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.cloud_download_outlined,
+                        size: 18,
+                        color: Theme.of(context).textTheme.displaySmall?.color,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Download audio to play',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).textTheme.displaySmall?.color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             const SizedBox(height: 8),
 
             // ── Position / duration labels ─────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatDuration(Duration(milliseconds: _currentPositionMs)),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).textTheme.displaySmall?.color,
-                    ),
-                  ),
-                  // Drag hint — only show when not playing.
-                  if (!_isPlaying)
+            if (_audioAvailableLocally)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
                     Text(
-                      '← drag to seek →',
+                      _formatDuration(Duration(milliseconds: _currentPositionMs)),
                       style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(
-                          context,
-                        ).textTheme.displaySmall?.color?.withValues(alpha: 0.4),
-                        fontStyle: FontStyle.italic,
+                        fontSize: 11,
+                        color: Theme.of(context).textTheme.displaySmall?.color,
                       ),
                     ),
-                  Text(
-                    widget.recording.formattedDuration,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).textTheme.displaySmall?.color,
+                    // Drag hint — only show when not playing.
+                    if (!_isPlaying)
+                      Text(
+                        '← drag to seek →',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Theme.of(
+                            context,
+                          ).textTheme.displaySmall?.color?.withValues(alpha: 0.4),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    Text(
+                      widget.recording.formattedDuration,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).textTheme.displaySmall?.color,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
 
             const SizedBox(height: 16),
 
             // ── Transport controls ─────────────────────────────────────
-            TransportControls(
-              isPlaying: _isPlaying,
-              currentSpeed: _playbackSpeed,
-              onPlayPause: _togglePlayPause,
-              onSkipForward: _skipForward,
-              onSkipBackward: _skipBackward,
-              onSpeedChanged: _setSpeed,
-            ),
+            if (_audioAvailableLocally)
+              TransportControls(
+                isPlaying: _isPlaying,
+                currentSpeed: _playbackSpeed,
+                onPlayPause: _togglePlayPause,
+                onSkipForward: _skipForward,
+                onSkipBackward: _skipBackward,
+                onSpeedChanged: _setSpeed,
+              ),
 
             const SizedBox(height: 16),
 
@@ -549,8 +676,13 @@ class _ExpandableRecordingCardState
               isBackingUp: _isBackingUp,
               backupProgress: _backupProgress,
               backupError: _backupError,
+              isDownloading: _isDownloading,
+              downloadProgress: _downloadProgress,
+              downloadError: _downloadError,
+              audioAvailableLocally: _audioAvailableLocally,
               onTranscribe: _transcribeRecording,
               onBackup: _backupRecording,
+              onDownload: _downloadAudio,
               onShare: _shareRecording,
               onDelete: () => _showDeleteConfirmation(context),
             ),
@@ -768,8 +900,8 @@ class _CardHintsStrip extends StatelessWidget {
             children: _hints
                 .map(
                   (h) =>
-                      _HintChip(icon: h.icon, label: h.label, color: h.color),
-                )
+                  _HintChip(icon: h.icon, label: h.label, color: h.color),
+            )
                 .toList(),
           ),
         ],

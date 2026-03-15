@@ -164,9 +164,14 @@ class CloudSyncService {
   /// metadata sync after this point. This method's sole purpose is to
   /// download missing audio files and resolve device-local [filePath]s
   /// into Hive — metadata is left to the stream.
+  ///
+  /// [autoDownloadAudio] mirrors the user's Settings toggle. When false,
+  /// audio files are *not* downloaded here — the user downloads them
+  /// manually from the recording card instead.
   Future<List<Recording>> restoreFromCloud({
     required FirebaseStorageService storageService,
     required StorageService localStorageService,
+    bool autoDownloadAudio = false,
     void Function(int current, int total)? onProgress,
   }) async {
     if (_userId == null) return [];
@@ -198,7 +203,7 @@ class CloudSyncService {
 
         bool audioAvailable = await File(resolvedPath).exists();
 
-        if (!audioAvailable && cloudRecording.isBackedUp) {
+        if (!audioAvailable && cloudRecording.isBackedUp && autoDownloadAudio) {
           debugPrint('📥 Restoring audio for ${cloudRecording.id}…');
           final downloadedPath = await storageService.downloadRecording(
             cloudRecording.backupUrl!,
@@ -206,6 +211,8 @@ class CloudSyncService {
             cloudRecording.fileName,
           );
           audioAvailable = downloadedPath != null;
+        } else if (!audioAvailable && cloudRecording.isBackedUp && !autoDownloadAudio) {
+          debugPrint('⏭️ Skipping audio download for ${cloudRecording.id} (auto-download off)');
         }
 
         final updatedRecording = cloudRecording.copyWith(filePath: resolvedPath);

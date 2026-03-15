@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:vocal_memo/providers/connectivity_provider.dart';
 import 'package:vocal_memo/providers/recording_provider.dart';
+import 'package:vocal_memo/providers/settings_provider.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/firebase_storage_service.dart';
@@ -102,11 +103,13 @@ final cloudRestoreProvider = FutureProvider<void>((ref) async {
   final cloudSyncService = ref.read(cloudSyncServiceProvider);
   final firebaseStorageService = ref.read(firebaseStorageServiceProvider);
   final localStorageService = ref.read(storageServiceProvider);
+  final settings = ref.read(settingsProvider);
 
   // This only downloads audio files — metadata comes via the stream
   await cloudSyncService.restoreFromCloud(
     storageService: firebaseStorageService,
     localStorageService: localStorageService,
+    autoDownloadAudio: settings.autoDownloadAudio,
   );
 
   // Refresh local state so the newly-resolved filePaths are visible

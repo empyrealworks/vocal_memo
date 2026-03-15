@@ -190,6 +190,7 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             title: const Text("Auto Gain Control"),
             subtitle: const Text("Automatically adjust microphone gain"),
+            secondary: const Icon(Icons.tune_outlined),
             value: settings.autoGainControl,
             onChanged: (v) =>
                 updateSettings(settings.copyWith(autoGainControl: v)),
@@ -197,6 +198,7 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             title: const Text("Noise Suppression"),
             subtitle: const Text("Reduce background noise"),
+            secondary: const Icon(Icons.noise_control_off_outlined),
             value: settings.noiseSuppression,
             onChanged: (v) =>
                 updateSettings(settings.copyWith(noiseSuppression: v)),
@@ -204,6 +206,7 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             title: const Text("Echo Cancellation"),
             subtitle: const Text("Minimize echo in recordings"),
+            secondary: const Icon(Icons.spatial_audio_off_outlined),
             value: settings.echoCancellation,
             onChanged: (v) =>
                 updateSettings(settings.copyWith(echoCancellation: v)),
@@ -224,12 +227,13 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             title: const Text("Recording Device"),
             subtitle: const Text("Choose input source"),
+            leading: const Icon(Icons.mic_external_on_outlined),
             trailing: DropdownButton<String>(
               value: settings.device,
               items: const [
                 DropdownMenuItem(
                     value: "Default Microphone",
-                    child: Text("Default Microphone")),
+                    child: Text("Default")),
                 DropdownMenuItem(
                     value: "External Mic", child: Text("External Mic")),
               ],
@@ -263,6 +267,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             title: const Text("Audio Format"),
             subtitle: const Text("Select recording format"),
+            leading: const Icon(Icons.audio_file_outlined),
             trailing: DropdownButton<String>(
               value: settings.audioFormat,
               items: const [
@@ -279,11 +284,25 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text("Show Live Waveform"),
             subtitle:
             const Text("Display real-time waveform during recording"),
+            secondary: const Icon(Icons.waves_outlined),
             value: settings.showWaveform,
             inactiveTrackColor: Colors.grey,
             onChanged: (v) =>
                 updateSettings(settings.copyWith(showWaveform: v)),
           ),
+
+          // Auto-download toggle — only relevant when signed in
+          if (authState.value != null)
+            SwitchListTile(
+              title: const Text("Auto-Download Audio"),
+              subtitle: const Text(
+                "Automatically download audio files from the cloud to this device",
+              ),
+              secondary: const Icon(Icons.cloud_download_outlined),
+              value: settings.autoDownloadAudio,
+              onChanged: (v) =>
+                  updateSettings(settings.copyWith(autoDownloadAudio: v)),
+            ),
 
           const SizedBox(height: 24),
           const Divider(),
@@ -299,6 +318,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             title: const Text("Theme"),
             subtitle: const Text("Choose app theme mode"),
+            leading: const Icon(Icons.color_lens_outlined),
             trailing: DropdownButton<String>(
               value: settings.themeMode,
               items: const [

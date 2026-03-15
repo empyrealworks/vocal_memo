@@ -197,12 +197,51 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
     final recording = await _audioService.stopRecording();
     _isRecording = false;
     if (recording != null) {
-      // 1. Persist locally
+      // 1. Persist locally — this must always succeed regardless of connectivity
       await _storageService.saveRecording(recording);
-      // 2. Optimistic UI update (Hive → state)
+      // 2. Optimistic UI update so the card appears immediately
       await _loadFromHive();
-      // 3. Push to Firestore — stream will echo back to all devices
-      await _cloudSyncService.syncRecordingToCloud(recording);
+      // 3. Push to Firestore fire-and-forget — if offline this will silently
+      //    fail (CloudSyncService swallows the error) and the Firestore
+      //    offline cache will retry automatically when connectivity returns.
+      //    We do NOT await this so the recording screen can pop immediately.
+      _cloudSyncService.syncRecordingToCloud(recording).catchError((e) {
+        debugPrint('⚠️ stopRecording: Firestore sync deferred (offline?): $e');
+      });
+    }
+  }
+
+  /// Downloads the audio file for [recording] from Firebase Storage to local
+  /// storage, then updates the recording's [filePath] in Hive and state so
+  /// playback works immediately.
+  ///
+  /// Returns the local file path on success, or null if download failed.
+  Future<String?> downloadAudioLocally(
+      Recording recording, {
+        void Function(double progress)? onProgress,
+      }) async {
+    if (!recording.isBackedUp) return null;
+
+    try {
+      final localPath = await _firebaseStorageService.downloadRecording(
+        recording.backupUrl!,
+        recording.id,
+        recording.fileName,
+      );
+
+      if (localPath != null) {
+        final updated = recording.copyWith(filePath: localPath);
+        await _storageService.updateRecording(updated);
+        // Update in-memory state so the card reflects the new path immediately
+        state = _sortRecordings(
+          state.map((r) => r.id == recording.id ? updated : r),
+        );
+      }
+
+      return localPath;
+    } catch (e) {
+      debugPrint('❌ downloadAudioLocally error for ${recording.id}: $e');
+      rethrow;
     }
   }
 
@@ -343,10 +382,11 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
 
   // ─── Cloud restore  (first login) ────────────────────────────
 
-  Future<void> restoreFromCloud() async {
+  Future<void> restoreFromCloud({bool autoDownloadAudio = false}) async {
     final cloudRecordings = await _cloudSyncService.restoreFromCloud(
       storageService: _firebaseStorageService,
       localStorageService: _storageService,
+      autoDownloadAudio: autoDownloadAudio,
     );
 
     if (cloudRecordings.isEmpty) return;
