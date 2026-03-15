@@ -131,8 +131,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           appBar: AppBar(
             title: Row(
               children: [
-                Image.asset('assets/images/logo.png', width: 40,),
-                const SizedBox(width: 10,),
+                Image.asset('assets/images/small_logo.png', width: 24,),
+                const SizedBox(width: 15,),
                 const Text('Vocal Memo', style: TextStyle(fontSize: 22),)
               ],
             ),

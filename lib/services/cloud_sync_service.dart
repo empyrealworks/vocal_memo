@@ -17,50 +17,55 @@ class CloudSyncService {
 
   String? get _userId => _authService.currentUser?.uid;
 
+  CollectionReference<Map<String, dynamic>>? get _recordingsRef {
+    final uid = _userId;
+    if (uid == null) return null;
+    return _firestore.collection('users').doc(uid).collection('recordings');
+  }
+
   // ─────────────────────────────────────────────────────────────
-  // RECORDING METADATA  (Firestore)
+  // REAL-TIME STREAM  (Firestore → all devices)
+  // ─────────────────────────────────────────────────────────────
+
+  /// Returns a live Firestore snapshot stream for the user's recordings
+  /// collection.
+  ///
+  /// **Firestore billing for this stream:**
+  ///   - Session start: 1 read per document currently in the collection.
+  ///   - Each subsequent event: 1 read per *changed* document only —
+  ///     unchanged documents do not incur reads.
+  ///   - The underlying connection is a persistent WebSocket; there is
+  ///     no polling overhead.
+  ///
+  /// **Documents intentionally exclude:**
+  ///   - `waveformData` — see [Recording.toCloudJson] for rationale.
+  ///   - `filePath`     — device-specific; resolved locally on each device.
+  ///
+  /// For unregistered users ([_userId] == null) the stream is empty and
+  /// no Firestore connection is opened.
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchRecordingsSnapshot() {
+    final ref = _recordingsRef;
+    if (ref == null) return const Stream.empty();
+    return ref.snapshots();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // WRITE — RECORDING METADATA  (Firestore)
   // ─────────────────────────────────────────────────────────────
 
   Future<void> syncRecordingToCloud(Recording recording) async {
     if (_userId == null) return;
     try {
-      await _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('recordings')
-          .doc(recording.id)
-          .set(recording.toJson());
+      await _recordingsRef!.doc(recording.id).set(recording.toCloudJson());
     } catch (e) {
       debugPrint('Error syncing recording: $e');
-    }
-  }
-
-  Future<List<Recording>> getRecordingsFromCloud() async {
-    if (_userId == null) return [];
-    try {
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('recordings')
-          .get();
-      return snapshot.docs
-          .map((doc) => Recording.fromJson(doc.data()))
-          .toList();
-    } catch (e) {
-      debugPrint('Error fetching recordings: $e');
-      return [];
     }
   }
 
   Future<void> deleteRecordingFromCloud(String recordingId) async {
     if (_userId == null) return;
     try {
-      await _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('recordings')
-          .doc(recordingId)
-          .delete();
+      await _recordingsRef!.doc(recordingId).delete();
     } catch (e) {
       debugPrint('Error deleting recording: $e');
     }
@@ -124,7 +129,7 @@ class CloudSyncService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // BULK SYNC
+  // BULK SYNC  (initial upload after login)
   // ─────────────────────────────────────────────────────────────
 
   Future<void> syncAllToCloud({
@@ -135,16 +140,13 @@ class CloudSyncService {
     try {
       await syncSettingsToCloud(settings);
       final batch = _firestore.batch();
-      final recordingsRef = _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('recordings');
+      final ref = _recordingsRef!;
       for (final recording in recordings) {
-        // encrypt transcript before syncing
+        final json = recording.toCloudJson();
         if (recording.transcript != null) {
-          recording.transcript = EncryptionService.encrypt(recording.transcript!);
+          json['transcript'] = EncryptionService.encrypt(recording.transcript!);
         }
-        batch.set(recordingsRef.doc(recording.id), recording.toJson());
+        batch.set(ref.doc(recording.id), json);
       }
       await batch.commit();
     } catch (e) {
@@ -153,19 +155,15 @@ class CloudSyncService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // RESTORE FROM CLOUD  (fresh install flow)
+  // RESTORE FROM CLOUD  (fresh install / first login)
   // ─────────────────────────────────────────────────────────────
 
-  /// Called after login on a fresh install (or when local Hive is empty).
+  /// One-time restore called after the first login on a device.
   ///
-  /// 1. Fetches all recording documents from Firestore.
-  /// 2. For each recording that has a [backupUrl]:
-  ///    a. Checks whether the audio file already exists locally.
-  ///    b. If the [filePath] is stale (different device/OS), resolves the
-  ///       correct path using [FirebaseStorageService.resolveLocalPath].
-  ///    c. If the file is missing, downloads + decrypts from Firebase Storage.
-  ///    d. Updates the recording in Hive with the corrected [filePath].
-  /// 3. Returns the list of restored [Recording] objects.
+  /// The real-time stream ([watchRecordingsSnapshot]) handles all ongoing
+  /// metadata sync after this point. This method's sole purpose is to
+  /// download missing audio files and resolve device-local [filePath]s
+  /// into Hive — metadata is left to the stream.
   Future<List<Recording>> restoreFromCloud({
     required FirebaseStorageService storageService,
     required StorageService localStorageService,
@@ -173,7 +171,16 @@ class CloudSyncService {
   }) async {
     if (_userId == null) return [];
 
-    final cloudRecordings = await getRecordingsFromCloud();
+    List<Recording> cloudRecordings;
+    try {
+      final snapshot = await _recordingsRef!.get();
+      cloudRecordings =
+          snapshot.docs.map((doc) => Recording.fromJson(doc.data())).toList();
+    } catch (e) {
+      debugPrint('Error fetching recordings for restore: $e');
+      return [];
+    }
+
     if (cloudRecordings.isEmpty) return [];
 
     final restored = <Recording>[];
@@ -184,7 +191,6 @@ class CloudSyncService {
       onProgress?.call(index, cloudRecordings.length);
 
       try {
-        // Resolve the correct local path for this device
         final resolvedPath = await FirebaseStorageService.resolveLocalPath(
           cloudRecording.filePath,
           cloudRecording.fileName,
@@ -192,10 +198,8 @@ class CloudSyncService {
 
         bool audioAvailable = await File(resolvedPath).exists();
 
-        // If audio is missing but we have a backup URL → download it
         if (!audioAvailable && cloudRecording.isBackedUp) {
-          debugPrint(
-              '📥 Restoring audio for ${cloudRecording.id} from cloud…');
+          debugPrint('📥 Restoring audio for ${cloudRecording.id}…');
           final downloadedPath = await storageService.downloadRecording(
             cloudRecording.backupUrl!,
             cloudRecording.id,
@@ -204,20 +208,14 @@ class CloudSyncService {
           audioAvailable = downloadedPath != null;
         }
 
-        // Build a recording with the correct local path for this device
-        final updatedRecording = cloudRecording.copyWith(
-          filePath: resolvedPath,
-        );
-
-        // Persist to local Hive storage
+        final updatedRecording = cloudRecording.copyWith(filePath: resolvedPath);
         await localStorageService.saveRecording(updatedRecording);
         restored.add(updatedRecording);
 
         debugPrint(
-            '✅ Restored ${cloudRecording.id} (audio available: $audioAvailable)');
+            '✅ Restored ${cloudRecording.id} (audio: $audioAvailable)');
       } catch (e) {
-        debugPrint('❌ Error restoring recording ${cloudRecording.id}: $e');
-        // Save metadata even if audio restore fails
+        debugPrint('❌ Error restoring ${cloudRecording.id}: $e');
         await localStorageService.saveRecording(cloudRecording);
         restored.add(cloudRecording);
       }
@@ -225,5 +223,19 @@ class CloudSyncService {
 
     debugPrint('🎉 Cloud restore complete: ${restored.length} recordings');
     return restored;
+  }
+
+  // Legacy one-shot fetch (still used by cloudRestoreProvider)
+  Future<List<Recording>> getRecordingsFromCloud() async {
+    if (_userId == null) return [];
+    try {
+      final snapshot = await _recordingsRef!.get();
+      return snapshot.docs
+          .map((doc) => Recording.fromJson(doc.data()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching recordings: $e');
+      return [];
+    }
   }
 }

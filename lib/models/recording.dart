@@ -59,6 +59,11 @@ class Recording {
     return EncryptionService.decrypt(transcript!);
   }
 
+  // ─── Serialisation ────────────────────────────────────────────
+
+  /// Full serialisation used for local Hive storage.
+  /// Includes [waveformData] so waveforms survive app restarts without
+  /// re-processing the audio file.
   Map<String, dynamic> toJson() => {
     'id': id,
     'fileName': fileName,
@@ -76,11 +81,42 @@ class Recording {
     'backupUrl': backupUrl,
   };
 
+  /// Cloud serialisation used for Firestore documents.
+  ///
+  /// Intentionally omits [waveformData] for two reasons:
+  ///   1. **Cost** — waveform arrays are hundreds of floats per recording.
+  ///      Storing them in Firestore inflates document size, increasing both
+  ///      storage cost and the bytes transferred on every `snapshots()` event.
+  ///   2. **Relevance** — waveform data is a rendering artefact derived from
+  ///      the local audio file. It is device-specific (depends on screen width)
+  ///      and can be regenerated on any device from the audio file itself.
+  ///
+  /// Also omits [filePath] because it is device-specific (the path differs
+  /// across Android, iOS, and installations). Each device resolves its own
+  /// local path and stores it in Hive; the cloud document carries [fileName]
+  /// and [backupUrl] so any device can reconstruct or download the file.
+  Map<String, dynamic> toCloudJson() => {
+    'id': id,
+    'fileName': fileName,
+    'title': title,
+    'createdAt': createdAt.toIso8601String(),
+    'durationMs': duration.inMilliseconds,
+    'isFavorite': isFavorite,
+    'isPinned': isPinned,
+    'tags': tags,
+    'folderId': folderId,
+    'transcript': transcript,
+    'isTranscribing': isTranscribing,
+    'backupUrl': backupUrl,
+    // filePath is excluded — resolved per-device from fileName + backupUrl
+    // waveformData is excluded — large, device-specific, re-derivable
+  };
+
   factory Recording.fromJson(Map<String, dynamic> json) => Recording(
     id: json['id'] as String,
     fileName: json['fileName'] as String,
     title: json['title'] as String?,
-    filePath: json['filePath'] as String,
+    filePath: json['filePath'] as String? ?? '',
     createdAt: DateTime.parse(json['createdAt'] as String),
     duration: Duration(milliseconds: json['durationMs'] as int),
     isFavorite: json['isFavorite'] as bool? ?? false,

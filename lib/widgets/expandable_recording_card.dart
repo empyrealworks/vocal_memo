@@ -432,7 +432,7 @@ class _ExpandableRecordingCardState
     ref.watch(transcriptionNotifierProvider(widget.recording.id));
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 1500),
       curve: Curves.easeInOut,
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
