@@ -1,5 +1,5 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
-// Updated manually to add HiveField(9) enableBeeps.
+// Updated manually to add HiveField(10) autoDownloadAudio.
 // Run `flutter pub run build_runner build` to regenerate if the model changes again.
 
 part of 'recording_settings.dart';
@@ -15,7 +15,6 @@ class RecordingSettingsAdapter extends TypeAdapter<RecordingSettings> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return RecordingSettings(
-      // Fields 0-8 are unchanged — safe to read from old boxes.
       autoGainControl:
       fields[0] == null ? true : fields[0] as bool,
       noiseSuppression:
@@ -34,16 +33,19 @@ class RecordingSettingsAdapter extends TypeAdapter<RecordingSettings> {
       fields[7] == null ? true : fields[7] as bool,
       themeMode:
       fields[8] == null ? 'System' : fields[8] as String,
-      // Field 9 is new — old boxes won't have it, so default to true.
+      // Field 9 added in v1.3.0 — old boxes default to true.
       enableBeeps:
       fields[9] == null ? true : fields[9] as bool,
+      // Field 10 added in v1.4.0 — old boxes default to false (manual download).
+      autoDownloadAudio:
+      fields[10] == null ? false : fields[10] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, RecordingSettings obj) {
     writer
-      ..writeByte(10) // total number of fields
+      ..writeByte(11) // total number of fields
       ..writeByte(0)
       ..write(obj.autoGainControl)
       ..writeByte(1)
@@ -63,7 +65,9 @@ class RecordingSettingsAdapter extends TypeAdapter<RecordingSettings> {
       ..writeByte(8)
       ..write(obj.themeMode)
       ..writeByte(9)
-      ..write(obj.enableBeeps);
+      ..write(obj.enableBeeps)
+      ..writeByte(10)
+      ..write(obj.autoDownloadAudio);
   }
 
   @override

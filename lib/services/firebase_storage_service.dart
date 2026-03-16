@@ -1,18 +1,39 @@
 // lib/services/firebase_storage_service.dart
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:encrypt/encrypt.dart' as enc;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'auth_service.dart';
+import 'connectivity_service.dart';
 import 'encryption _service.dart';
+
+/// Thrown when an upload or download is attempted while the device is offline.
+class OfflineException implements Exception {
+  final String message;
+  const OfflineException([this.message = 'No internet connection.']);
+  @override
+  String toString() => message;
+}
+
+/// Thrown when a transfer is interrupted mid-way by a lost connection.
+class TransferInterruptedException implements Exception {
+  final String message;
+  const TransferInterruptedException(
+      [this.message = 'Transfer interrupted. It will resume when you\'re back online.']);
+  @override
+  String toString() => message;
+}
 
 class FirebaseStorageService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final AuthService _authService;
+  final ConnectivityService _connectivity;
 
-  FirebaseStorageService(this._authService);
+  /// Active upload tasks keyed by [recordingId].
+  /// Stored so callers can cancel in-flight transfers if needed.
+  final Map<String, UploadTask> _activeTasks = {};
+
+  FirebaseStorageService(this._authService, this._connectivity);
 
   String? get _userId => _authService.currentUser?.uid;
 
@@ -21,13 +42,22 @@ class FirebaseStorageService {
   // ─────────────────────────────────────────────────────────────
 
   /// Encrypts the audio file and uploads it to Firebase Storage.
-  /// Returns the download URL on success, or null on failure.
+  ///
+  /// Throws [OfflineException] immediately if the device is offline.
+  /// Throws [TransferInterruptedException] if the connection drops mid-transfer.
+  /// Returns the download URL on success, or throws on any other failure.
   Future<String?> uploadRecording(
       String localPath,
       String recordingId, {
         void Function(double progress)? onProgress,
       }) async {
     if (_userId == null) return null;
+
+    // ── Pre-flight connectivity check ─────────────────────────
+    if (!await _connectivity.checkNow()) {
+      throw const OfflineException(
+          'You\'re offline. The backup will start automatically once you reconnect.');
+    }
 
     File? encryptedTempFile;
     try {
@@ -53,31 +83,57 @@ class FirebaseStorageService {
           .ref()
           .child('users/$_userId/recordings/$recordingId/$fileName.enc');
 
-      debugPrint('☁️ Uploading encrypted audio to Firebase Storage…');
+      debugPrint('☁️ Uploading encrypted audio for $recordingId…');
       final uploadTask = ref.putFile(encryptedTempFile);
+      _activeTasks[recordingId] = uploadTask;
 
       // Monitor progress
       uploadTask.snapshotEvents.listen((snapshot) {
-        final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-        debugPrint(
-            '  Upload progress: ${(progress * 100).toStringAsFixed(1)}%');
+        final progress =
+        snapshot.totalBytes > 0
+            ? snapshot.bytesTransferred / snapshot.totalBytes
+            : 0.0;
         onProgress?.call(progress);
       });
 
       await uploadTask;
+      _activeTasks.remove(recordingId);
+
       final downloadUrl = await ref.getDownloadURL();
-      debugPrint('✅ Upload complete: $downloadUrl');
+      debugPrint('✅ Upload complete: $recordingId');
       return downloadUrl;
+    } on FirebaseException catch (e) {
+      _activeTasks.remove(recordingId);
+      // Firebase cancellation or network interruption
+      if (e.code == 'canceled' || e.code == 'unknown') {
+        throw const TransferInterruptedException();
+      }
+      debugPrint('❌ Firebase upload error [${e.code}]: ${e.message}');
+      throw TransferInterruptedException(
+          'Upload failed. It will retry when you\'re back online.');
+    } on SocketException {
+      _activeTasks.remove(recordingId);
+      throw const TransferInterruptedException();
     } catch (e) {
-      debugPrint('❌ Error uploading file: $e');
-      return null;
+      _activeTasks.remove(recordingId);
+      debugPrint('❌ Unexpected upload error: $e');
+      rethrow;
     } finally {
-      // 4. Clean up temp encrypted file
+      // Always clean up the temp encrypted file
       try {
         if (encryptedTempFile != null && await encryptedTempFile.exists()) {
           await encryptedTempFile.delete();
         }
       } catch (_) {}
+    }
+  }
+
+  /// Cancels an in-flight upload for [recordingId] if one exists.
+  Future<void> cancelUpload(String recordingId) async {
+    final task = _activeTasks.remove(recordingId);
+    if (task != null) {
+      await task.cancel();
+      debugPrint('🚫 Upload cancelled for $recordingId');
     }
   }
 
@@ -88,14 +144,21 @@ class FirebaseStorageService {
   /// Downloads the encrypted audio from Firebase Storage, decrypts it, and
   /// saves the plain audio file locally.
   ///
-  /// [fileName] is the original audio file name (e.g. "rec_abc123.m4a").
-  /// Returns the resolved local file path, or null on failure.
+  /// Throws [OfflineException] when offline.
+  /// Throws [TransferInterruptedException] on mid-transfer disconnection.
+  /// Returns the resolved local file path, or null on non-network failure.
   Future<String?> downloadRecording(
       String downloadUrl,
       String recordingId,
       String fileName,
       ) async {
     if (_userId == null) return null;
+
+    // ── Pre-flight connectivity check ─────────────────────────
+    if (!await _connectivity.checkNow()) {
+      throw const OfflineException(
+          'You\'re offline. This recording will download automatically once you reconnect.');
+    }
 
     File? encryptedTempFile;
     try {
@@ -109,7 +172,7 @@ class FirebaseStorageService {
       final finalLocalPath = '${recordingsDir.path}/$fileName';
       final finalFile = File(finalLocalPath);
 
-      // Skip download if file already exists and is valid
+      // Skip download if file already exists and is non-empty
       if (await finalFile.exists() && await finalFile.length() > 0) {
         debugPrint('✅ Audio already exists locally: $finalLocalPath');
         return finalLocalPath;
@@ -120,7 +183,7 @@ class FirebaseStorageService {
       final tempPath = '${tempDir.path}/${recordingId}_enc.tmp';
       encryptedTempFile = File(tempPath);
 
-      debugPrint('📥 Downloading encrypted audio from Firebase Storage…');
+      debugPrint('📥 Downloading encrypted audio for $recordingId…');
       final ref = _storage.refFromURL(downloadUrl);
       await ref.writeToFile(encryptedTempFile);
 
@@ -132,8 +195,18 @@ class FirebaseStorageService {
       await finalFile.writeAsBytes(decryptedBytes);
       debugPrint('✅ Download & decrypt complete: $finalLocalPath');
       return finalLocalPath;
+    } on FirebaseException catch (e) {
+      if (e.code == 'canceled' || e.code == 'unknown') {
+        throw const TransferInterruptedException(
+            'Download interrupted. It will retry when you\'re back online.');
+      }
+      debugPrint('❌ Firebase download error [${e.code}]: ${e.message}');
+      return null;
+    } on SocketException {
+      throw const TransferInterruptedException(
+          'Download interrupted. It will retry when you\'re back online.');
     } catch (e) {
-      debugPrint('❌ Error downloading file: $e');
+      debugPrint('❌ Unexpected download error: $e');
       return null;
     } finally {
       try {
@@ -157,14 +230,11 @@ class FirebaseStorageService {
       String storedFilePath,
       String fileName,
       ) async {
-    // Fast path: file already exists at the stored path
     if (await File(storedFilePath).exists()) return storedFilePath;
 
-    // Rebuild path for this device
     final dir = await getApplicationDocumentsDirectory();
     final rebuilt = '${dir.path}/recordings/$fileName';
-    debugPrint(
-        '🔄 Path resolved: $storedFilePath → $rebuilt');
+    debugPrint('🔄 Path resolved: $storedFilePath → $rebuilt');
     return rebuilt;
   }
 
@@ -184,6 +254,9 @@ class FirebaseStorageService {
         await item.delete();
       }
       debugPrint('🗑️ Deleted recording from cloud: $recordingId');
+    } on SocketException {
+      // Deletion will be retried on next launch — not catastrophic
+      debugPrint('⚠️ Could not delete from cloud (offline): $recordingId');
     } catch (e) {
       debugPrint('❌ Error deleting from storage: $e');
     }

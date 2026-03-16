@@ -1,6 +1,7 @@
 // lib/services/auth_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 enum UserTier {
@@ -46,7 +47,7 @@ class AuthService {
       await credential.user?.sendEmailVerification();
       return credential;
     } on FirebaseAuthException catch (e) {
-      throw _handleAuthException(e);
+      throw Exception(_handleAuthException(e));
     }
   }
 
@@ -59,14 +60,14 @@ class AuthService {
         password: password,
       );
     } on FirebaseAuthException catch (e) {
-      throw _handleAuthException(e);
+      throw Exception(_handleAuthException(e));
     }
   }
 
   Future<UserCredential?> signInWithGoogle() async {
     try {
       final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return null;
+      if (googleUser == null) return null; // User cancelled the picker
 
       final googleAuth = await googleUser.authentication;
       final credential = GoogleAuthProvider.credential(
@@ -74,19 +75,32 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
       return await _auth.signInWithCredential(credential);
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_handleAuthException(e));
     } catch (e) {
-      throw Exception('Google sign in failed: $e');
+      // Catch PlatformException for network errors and other native failures
+      final message = e.toString().toLowerCase();
+      if (message.contains('network') || message.contains('socket')) {
+        throw Exception(
+            'No internet connection. Please check your connection and try again.');
+      }
+      if (message.contains('cancelled') || message.contains('canceled')) {
+        // User cancelled — rethrow null-equivalent so callers can no-op
+        return null;
+      }
+      debugPrint('Google sign-in error: $e');
+      throw Exception('Google sign-in failed. Please try again.');
     }
   }
 
   // ── Password reset ────────────────────────────────────────────────────────
 
-  /// Sends a password reset email. Throws a user-friendly String on failure.
+  /// Sends a password reset email. Throws a user-friendly Exception on failure.
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email.trim());
     } on FirebaseAuthException catch (e) {
-      throw _handleAuthException(e);
+      throw Exception(_handleAuthException(e));
     }
   }
 
@@ -141,25 +155,52 @@ class AuthService {
       'status': 'pending', // update to 'completed' after manual processing
     });
 
-    // Sign out immediately — the account stays in Auth until you process it,
-    // but the user is logged out and cannot log back in easily (the email is
-    // now associated with a pending deletion).
     await signOut();
   }
 
   // ── Error handling ────────────────────────────────────────────────────────
 
+  /// Maps [FirebaseAuthException] codes to clear, non-sensitive messages.
+  ///
+  /// Rules:
+  /// • Never reveal whether an email address is registered or not.
+  /// • Never expose internal Firebase error messages or codes.
+  /// • Network errors get a specific, actionable message.
   String _handleAuthException(FirebaseAuthException e) {
     switch (e.code) {
-      case 'weak-password':          return 'Password is too weak';
-      case 'email-already-in-use':   return 'An account already exists with this email';
-      case 'user-not-found':         return 'No account found with this email';
-      case 'wrong-password':         return 'Incorrect password';
-      case 'invalid-email':          return 'Invalid email address';
-      case 'invalid-credential':     return 'Incorrect email or password';
-      case 'too-many-requests':      return 'Too many attempts. Please try again later';
-      case 'requires-recent-login':  return 'Please sign out and sign in again to continue';
-      default: return e.message ?? 'Authentication failed';
+    // ── Sign-up errors ──────────────────────────────────────
+      case 'weak-password':
+        return 'Your password is too short. Please use at least 6 characters.';
+      case 'email-already-in-use':
+        return 'An account already exists with this email address.';
+
+    // ── Sign-in errors ──────────────────────────────────────
+    // user-not-found and wrong-password intentionally return the same
+    // message to prevent account enumeration attacks.
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'Incorrect email or password.';
+
+    // ── Common errors ───────────────────────────────────────
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.';
+      case 'requires-recent-login':
+        return 'For security, please sign out and sign back in to continue.';
+      case 'user-disabled':
+        return 'This account has been disabled. Please contact support.';
+
+    // ── Network errors ──────────────────────────────────────
+      case 'network-request-failed':
+        return 'No internet connection. Please check your connection and try again.';
+
+    // ── Fallback ────────────────────────────────────────────
+      default:
+      // Avoid leaking raw Firebase messages — log them internally only.
+        debugPrint('Unhandled FirebaseAuthException [${e.code}]: ${e.message}');
+        return 'Something went wrong. Please try again.';
     }
   }
 }

@@ -1,7 +1,9 @@
 // lib/screens/auth_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/connectivity_provider.dart';
 import '../providers/recording_provider.dart';
+import '../services/connectivity_service.dart';
 import '../theme/app_theme.dart';
 import '../providers/auth_provider.dart';
 
@@ -32,10 +34,52 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     super.dispose();
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /// Strips the "Exception: " prefix that Dart adds when rethrowing via
+  /// `throw Exception(message)`, so the user only sees the clean message.
+  String _cleanError(Object e) {
+    final raw = e.toString();
+    if (raw.startsWith('Exception: ')) return raw.substring(11);
+    return raw;
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.teal,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
   // ── Email auth ────────────────────────────────────────────────────────────
 
   Future<void> _handleEmailAuth() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Check connectivity before attempting auth
+    final isOnline = ref.read(isOnlineProvider);
+    if (!isOnline) {
+      _showError('No internet connection. Please check your connection and try again.');
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -47,12 +91,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           _passwordController.text,
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Verification email sent! Please check your inbox.'),
-              backgroundColor: AppTheme.teal,
-            ),
-          );
+          _showSuccess('Verification email sent! Please check your inbox.');
           Navigator.pop(context);
         }
       } else {
@@ -67,11 +106,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         if (mounted) Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
-        );
-      }
+      _showError(_cleanError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -80,28 +115,29 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   // ── Google sign-in ────────────────────────────────────────────────────────
 
   Future<void> _handleGoogleSignIn() async {
+    // Check connectivity before attempting auth
+    final isOnline = ref.read(isOnlineProvider);
+    if (!isOnline) {
+      _showError('No internet connection. Please check your connection and try again.');
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
-      await ref.read(authServiceProvider).signInWithGoogle();
+      final result = await ref.read(authServiceProvider).signInWithGoogle();
+
+      // null means the user cancelled the Google picker — no error to show
+      if (result == null) return;
 
       final recordingService = ref.read(recordingProvider.notifier);
       await recordingService.restoreFromCloud();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Signed in successfully!'),
-            backgroundColor: AppTheme.teal,
-          ),
-        );
+        _showSuccess('Signed in successfully!');
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
-        );
-      }
+      _showError(_cleanError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -111,7 +147,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   Future<void> _showForgotPasswordDialog() async {
     final emailController = TextEditingController(
-      // Pre-fill if the user already typed their email.
       text: _emailController.text.trim(),
     );
     bool sending = false;
@@ -260,6 +295,21 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                   );
                                   return;
                                 }
+
+                                // Connectivity check
+                                final online = ConnectivityService().isOnline;
+                                if (!online) {
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'No internet connection. Please try again when online.'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+
                                 setDialogState(() => sending = true);
                                 try {
                                   await ref
@@ -276,8 +326,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                     ScaffoldMessenger.of(context)
                                         .showSnackBar(
                                       SnackBar(
-                                        content:
-                                        Text(e.toString()),
+                                        content: Text(
+                                            e.toString().replaceFirst(
+                                                'Exception: ', '')),
                                         backgroundColor: Colors.red,
                                       ),
                                     );
@@ -324,188 +375,227 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isOnline = ref.watch(isOnlineProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_isSignUp ? 'Create Account' : 'Sign In'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.showBenefits) _buildBenefits(),
+      body: Column(
+        children: [
+          // ── Offline notice bar ─────────────────────────────────────────
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            height: isOnline ? 0 : 40,
+            color: Colors.orange.shade700,
+            child: isOnline
+                ? const SizedBox.shrink()
+                : const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.wifi_off_rounded,
+                    color: Colors.white, size: 14),
+                SizedBox(width: 6),
+                Text(
+                  'No internet connection',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-            const SizedBox(height: 32),
-
-            // ── Email / Password form ──────────────────────────────────────
-            Form(
-              key: _formKey,
+          // ── Form ───────────────────────────────────────────────────────
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.email],
-                    decoration: InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      prefixIcon: const Icon(Icons.email_outlined),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!value.contains('@')) {
-                        return 'Please enter a valid email';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    autofillHints: _isSignUp
-                        ? const [AutofillHints.newPassword]
-                        : const [AutofillHints.password],
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                        onPressed: () =>
-                            setState(() => _obscurePassword = !_obscurePassword),
-                      ),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your password';
-                      }
-                      if (_isSignUp && value.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    },
-                  ),
+                  if (widget.showBenefits) _buildBenefits(),
 
-                  // ── Forgot password (sign-in mode only) ───────────────
-                  if (!_isSignUp)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _isLoading ? null : _showForgotPasswordDialog,
-                        child: const Text(
-                          'Forgot password?',
-                          style: TextStyle(
-                            color: AppTheme.teal,
-                            fontSize: 13,
+                  const SizedBox(height: 32),
+
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.email],
+                          decoration: InputDecoration(
+                            labelText: 'Email',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            prefixIcon: const Icon(Icons.email_outlined),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your email';
+                            }
+                            if (!value.contains('@')) {
+                              return 'Please enter a valid email';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          autofillHints: _isSignUp
+                              ? const [AutofillHints.newPassword]
+                              : const [AutofillHints.password],
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                              onPressed: () => setState(
+                                      () => _obscurePassword = !_obscurePassword),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your password';
+                            }
+                            if (_isSignUp && value.length < 6) {
+                              return 'Password must be at least 6 characters';
+                            }
+                            return null;
+                          },
+                        ),
+
+                        // ── Forgot password (sign-in only) ─────────────
+                        if (!_isSignUp)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed:
+                              _isLoading ? null : _showForgotPasswordDialog,
+                              child: const Text(
+                                'Forgot password?',
+                                style: TextStyle(
+                                  color: AppTheme.teal,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        const SizedBox(height: 8),
+                        if (_isSignUp) const SizedBox(height: 8),
+
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed:
+                            (_isLoading || !isOnline) ? null : _handleEmailAuth,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.orange,
+                              disabledBackgroundColor:
+                              AppTheme.orange.withValues(alpha: 0.5),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                                : Text(
+                              _isSignUp ? 'Create Account' : 'Sign In',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
+                  ),
 
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 24),
 
-                  if (_isSignUp) const SizedBox(height: 8),
+                  // ── Divider ───────────────────────────────────────────
+                  Row(
+                    children: [
+                      const Expanded(child: Divider()),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'OR',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                      const Expanded(child: Divider()),
+                    ],
+                  ),
 
+                  const SizedBox(height: 24),
+
+                  // ── Google sign-in ────────────────────────────────────
                   SizedBox(
                     width: double.infinity,
                     height: 50,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _handleEmailAuth,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.orange,
+                    child: OutlinedButton.icon(
+                      onPressed:
+                      (_isLoading || !isOnline) ? null : _handleGoogleSignIn,
+                      icon: Image.network(
+                        'https://www.google.com/favicon.ico',
+                        width: 20,
+                        height: 20,
+                        errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.g_mobiledata, size: 20),
+                      ),
+                      label: const Text('Continue with Google'),
+                      style: OutlinedButton.styleFrom(
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
+                        side: const BorderSide(color: AppTheme.mediumGray),
                       ),
-                      child: _isLoading
-                          ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                          : Text(
-                        _isSignUp ? 'Create Account' : 'Sign In',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Toggle sign-in / sign-up ──────────────────────────
+                  TextButton(
+                    onPressed: () => setState(() => _isSignUp = !_isSignUp),
+                    child: Text(
+                      _isSignUp
+                          ? 'Already have an account? Sign in'
+                          : "Don't have an account? Sign up",
                     ),
                   ),
                 ],
               ),
             ),
-
-            const SizedBox(height: 24),
-
-            // ── Divider ───────────────────────────────────────────────────
-            Row(
-              children: [
-                const Expanded(child: Divider()),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    'OR',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-                const Expanded(child: Divider()),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // ── Google sign-in ────────────────────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: OutlinedButton.icon(
-                onPressed: _isLoading ? null : _handleGoogleSignIn,
-                icon: Image.network(
-                  'https://www.google.com/favicon.ico',
-                  width: 20,
-                  height: 20,
-                ),
-                label: const Text('Continue with Google'),
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  side: const BorderSide(color: AppTheme.mediumGray),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ── Toggle sign-in / sign-up ──────────────────────────────────
-            TextButton(
-              onPressed: () => setState(() => _isSignUp = !_isSignUp),
-              child: Text(
-                _isSignUp
-                    ? 'Already have an account? Sign in'
-                    : "Don't have an account? Sign up",
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

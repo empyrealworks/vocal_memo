@@ -51,7 +51,8 @@ class _TranscriptViewerScreenState
   }
 
   void _onTextChanged() {
-    if (!_hasChanges && _textController.text != widget.recording.displayTranscript) {
+    if (!_hasChanges &&
+        _textController.text != widget.recording.displayTranscript) {
       setState(() => _hasChanges = true);
     }
   }
@@ -166,23 +167,108 @@ class _TranscriptViewerScreenState
     }
   }
 
+  Future<void> _deleteTranscript() async {
+    try {
+      await ref
+          .read(recordingProvider.notifier)
+          .updateRecording(widget.recording.copyWith(transcript: null));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Transcript deleted'),
+            backgroundColor: AppTheme.teal,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete transcript: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<bool> _onWillPop() async {
     if (_hasChanges) {
       final shouldDiscard = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Unsaved Changes'),
-          content: const Text('Do you want to discard your changes?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+        builder: (context) => Dialog(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: AppTheme.orange.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.warning,
+                    size: 32,
+                    color: AppTheme.orange,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Title
+                Text(
+                  'Unsaved Changes',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                // Message
+                Text(
+                  'Do you want to discard your changes?',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                // Action buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side: const BorderSide(color: AppTheme.mediumGray),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.orange,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text(
+                          'Discard',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Discard', style: TextStyle(color: Colors.red)),
-            ),
-          ],
+          ),
         ),
       );
       return shouldDiscard ?? false;
@@ -228,6 +314,9 @@ class _TranscriptViewerScreenState
                   case 'share':
                     _shareTranscript();
                     break;
+                  case 'delete':
+                    _deleteTranscriptDialog();
+                    break;
                 }
               },
               itemBuilder: (context) => [
@@ -258,6 +347,16 @@ class _TranscriptViewerScreenState
                       Icon(Icons.share, size: 20),
                       SizedBox(width: 12),
                       Text('Share'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, size: 20),
+                      SizedBox(width: 12),
+                      Text('Delete'),
                     ],
                   ),
                 ),
@@ -364,5 +463,138 @@ class _TranscriptViewerScreenState
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
       ),
     );
+  }
+
+  Future<void> _deleteTranscriptDialog() async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppTheme.orange.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.delete_outline_rounded,
+                  size: 32,
+                  color: AppTheme.orange,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Title
+              Text(
+                'Delete Transcript',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+
+              // Message
+              Text(
+                'Are you sure you want to delete this transcript?',
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+
+              // Warning!!!
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: AppTheme.orange,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'This action cannot be undone.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.orange,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Note
+              Text(
+                'Note: You can generate a new transcript later.',
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.start,
+              ),
+              const SizedBox(height: 24),
+
+              // Action buttons
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: const BorderSide(color: AppTheme.mediumGray),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        ref
+                            .read(recordingProvider.notifier)
+                            .deleteRecording(widget.recording.id);
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.orange,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text(
+                        'Delete',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (shouldDelete == true) {
+      await _deleteTranscript();
+    }
   }
 }

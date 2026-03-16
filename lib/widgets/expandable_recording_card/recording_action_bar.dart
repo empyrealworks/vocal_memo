@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/recording.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/connectivity_provider.dart';
 import '../../screens/trim_screen.dart';
 import '../../theme/app_theme.dart';
 import '../feature_gate_dialog.dart';
@@ -14,8 +15,14 @@ class RecordingActionBar extends ConsumerWidget {
   final bool isBackingUp;
   final double backupProgress;
   final String? backupError;
+  // Download state (when audio file is not available locally)
+  final bool isDownloading;
+  final double downloadProgress;
+  final String? downloadError;
+  final bool audioAvailableLocally;
   final VoidCallback onTranscribe;
   final VoidCallback onBackup;
+  final VoidCallback onDownload;
   final VoidCallback onShare;
   final VoidCallback onDelete;
 
@@ -26,8 +33,13 @@ class RecordingActionBar extends ConsumerWidget {
     required this.isBackingUp,
     required this.backupProgress,
     this.backupError,
+    this.isDownloading = false,
+    this.downloadProgress = 0.0,
+    this.downloadError,
+    required this.audioAvailableLocally,
     required this.onTranscribe,
     required this.onBackup,
+    required this.onDownload,
     required this.onShare,
     required this.onDelete,
   });
@@ -125,14 +137,56 @@ class RecordingActionBar extends ConsumerWidget {
           },
         ),
 
-        // ── Cloud Backup Button ──
+        // ── Cloud / Download Button ──
         Consumer(
           builder: (context, ref, child) {
             final isAuthenticated = ref.watch(authStateProvider).value != null;
             if (!isAuthenticated) return const SizedBox.shrink();
 
-            final isBackedUp = recording.isBackedUp;
+            final isOnline = ref.watch(connectivityServiceProvider).isOnline;
 
+            // ── DOWNLOADING STATE ──
+            if (isDownloading) {
+              return Tooltip(
+                message: 'Downloading… ${(downloadProgress * 100).toStringAsFixed(0)}%',
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: CircularProgressIndicator(
+                      value: downloadProgress > 0 ? downloadProgress : null,
+                      strokeWidth: 2,
+                      color: AppTheme.teal,
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            // ── AUDIO NOT LOCAL, BUT BACKED UP → show download button ──
+            if (!audioAvailableLocally && recording.isBackedUp) {
+              return IconButton(
+                icon: Icon(
+                  isOnline
+                      ? (downloadError != null
+                      ? Icons.cloud_off_rounded
+                      : Icons.cloud_download_rounded)
+                      : Icons.cloud_off_rounded,
+                ),
+                color: downloadError != null || !isOnline
+                    ? AppTheme.mediumGray
+                    : AppTheme.teal,
+                onPressed: isOnline ? onDownload : null,
+                tooltip: !isOnline
+                    ? 'Offline — connect to download'
+                    : downloadError != null
+                    ? 'Download failed — tap to retry'
+                    : 'Download audio to this device',
+              );
+            }
+
+            // ── UPLOADING STATE ──
             if (isBackingUp) {
               return Tooltip(
                 message: 'Uploading… ${(backupProgress * 100).toStringAsFixed(0)}%',
@@ -151,6 +205,8 @@ class RecordingActionBar extends ConsumerWidget {
               );
             }
 
+            // ── DEFAULT: upload / backed-up indicator ──
+            final isBackedUp = recording.isBackedUp;
             return IconButton(
               icon: Icon(
                 isBackedUp

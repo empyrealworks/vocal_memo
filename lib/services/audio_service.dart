@@ -50,28 +50,24 @@ class AudioService {
   /// [PlayerController]. The controller is disposed after the tone finishes.
   Future<void> _playBeep(bool isStart) async {
     PlayerController? beepController;
-    File? tempFile;
+    File? file;
 
     try {
       final assetKey =
           'assets/sounds/${isStart ? 'start_beep' : 'stop_beep'}.mp3';
 
       // Load asset bytes from bundle.
-      final ByteData byteData = await rootBundle.load(assetKey);
-      final Uint8List bytes = byteData.buffer.asUint8List();
+      final audioFile = await rootBundle.load(assetKey);
+      final appDirectory = await getApplicationDocumentsDirectory();
 
-      // Write to temp dir (reuses same filename each time — no leaking files).
-      final tempDir = await getTemporaryDirectory();
-      final tempPath =
-          '${tempDir.path}/${isStart ? 'start' : 'stop'}_beep.mp3';
-      tempFile = File(tempPath);
-      await tempFile.writeAsBytes(bytes, flush: true);
+      file = File('${appDirectory.path}/${isStart ? 'start' : 'stop'}_beep.mp3');
+      await file.writeAsBytes(audioFile.buffer.asUint8List());
 
       // Play with a dedicated controller.
       beepController = PlayerController();
-      await beepController.setFinishMode(finishMode: FinishMode.stop);
+      beepController.setFinishMode(finishMode: FinishMode.stop);
       await beepController.preparePlayer(
-        path: tempPath,
+        path: file.path,
         shouldExtractWaveform: false,
       );
       await beepController.startPlayer();

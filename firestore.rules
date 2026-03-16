@@ -9,5 +9,10 @@ service cloud.firestore {
     match /users/{userId}/usage/{document} {
       allow read, write: if request.auth.uid == userId;
     }
+
+    // Deletion Requests
+    match /deletion_requests/{userId}/{document} {
+      allow read, write: if request.auth.uid == userId;
+    }
   }
 }
