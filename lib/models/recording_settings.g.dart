@@ -1,8 +1,10 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
-// Updated manually to add HiveField(10) autoDownloadAudio.
-// Run `flutter pub run build_runner build` to regenerate if the model changes again.
 
 part of 'recording_settings.dart';
+
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
 
 class RecordingSettingsAdapter extends TypeAdapter<RecordingSettings> {
   @override
@@ -15,37 +17,25 @@ class RecordingSettingsAdapter extends TypeAdapter<RecordingSettings> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return RecordingSettings(
-      autoGainControl:
-      fields[0] == null ? true : fields[0] as bool,
-      noiseSuppression:
-      fields[1] == null ? true : fields[1] as bool,
-      echoCancellation:
-      fields[2] == null ? true : fields[2] as bool,
-      device:
-      fields[3] == null ? 'Default Microphone' : fields[3] as String,
-      bitRate:
-      fields[4] == null ? 128000 : fields[4] as int,
-      sampleRate:
-      fields[5] == null ? 16000 : fields[5] as int,
-      audioFormat:
-      fields[6] == null ? 'm4a' : fields[6] as String,
-      showWaveform:
-      fields[7] == null ? true : fields[7] as bool,
-      themeMode:
-      fields[8] == null ? 'System' : fields[8] as String,
-      // Field 9 added in v1.3.0 — old boxes default to true.
-      enableBeeps:
-      fields[9] == null ? true : fields[9] as bool,
-      // Field 10 added in v1.4.0 — old boxes default to false (manual download).
-      autoDownloadAudio:
-      fields[10] == null ? false : fields[10] as bool,
+      autoGainControl: fields[0] as bool,
+      noiseSuppression: fields[1] as bool,
+      echoCancellation: fields[2] as bool,
+      device: fields[3] as String,
+      bitRate: fields[4] as int,
+      sampleRate: fields[5] as int,
+      audioFormat: fields[6] as String,
+      showWaveform: fields[7] as bool,
+      themeMode: fields[8] as String,
+      enableBeeps: fields[9] as bool,
+      autoDownloadAudio: fields[10] as bool,
+      stereoRecording: fields[11] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, RecordingSettings obj) {
     writer
-      ..writeByte(11) // total number of fields
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.autoGainControl)
       ..writeByte(1)
@@ -67,7 +57,9 @@ class RecordingSettingsAdapter extends TypeAdapter<RecordingSettings> {
       ..writeByte(9)
       ..write(obj.enableBeeps)
       ..writeByte(10)
-      ..write(obj.autoDownloadAudio);
+      ..write(obj.autoDownloadAudio)
+      ..writeByte(11)
+      ..write(obj.stereoRecording);
   }
 
   @override
@@ -76,7 +68,7 @@ class RecordingSettingsAdapter extends TypeAdapter<RecordingSettings> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is RecordingSettingsAdapter &&
-              runtimeType == other.runtimeType &&
-              typeId == other.typeId;
+      other is RecordingSettingsAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
 }

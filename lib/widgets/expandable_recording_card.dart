@@ -7,8 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:vocal_memo/providers/auth_provider.dart';
+import 'package:vocal_memo/widgets/custom_dialog.dart';
 import 'package:vocal_memo/widgets/expandable_recording_card/recording_action_bar.dart';
 import 'dart:io';
+import '../providers/selection_provider.dart';
 import '../providers/transcription_provider.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
@@ -148,15 +150,12 @@ class _ExpandableRecordingCardState
     try {
       _waveformController = PlayerController();
 
-      // Use medium update frequency — smooth position tick without hammering.
       _waveformController!.updateFrequency = UpdateFrequency.medium;
 
-      // Position stream.
       _positionSub = _waveformController!.onCurrentDurationChanged.listen((ms) {
         if (mounted) setState(() => _currentPositionMs = ms);
       });
 
-      // State stream — keep _isPlaying in sync.
       _playerStateSub = _waveformController!.onPlayerStateChanged.listen((
           state,
           ) {
@@ -164,7 +163,6 @@ class _ExpandableRecordingCardState
         setState(() => _isPlaying = state == PlayerState.playing);
       });
 
-      // Completion — reset to start, release focus.
       _completionSub = _waveformController!.onCompletion.listen((_) {
         if (!mounted) return;
         setState(() {
@@ -176,18 +174,15 @@ class _ExpandableRecordingCardState
         }
       });
 
-      // WaveformType.long needs a density that makes the scrollable waveform
-      // readable. 10 samples/second is ideal:
-      //   1-min recording  →  600 samples  (rich detail)
-      //   5-min recording  → 3 000 samples (still smooth, not squashed)
-      //  60-min recording  → 36 000 samples (capped by plugin internally)
+      final bool hasCachedWaveform = widget.recording.waveformData?.isNotEmpty == true;
+
       await _waveformController!.preparePlayer(
         path: widget.recording.filePath,
-        shouldExtractWaveform: true,
+        // Only extract if we don't already have it in Hive
+        shouldExtractWaveform: !hasCachedWaveform,
         noOfSamplesPerSecond: 10,
       );
 
-      // Restore speed if the card was previously playing at a non-default rate.
       if (_playbackSpeed != 1.0) {
         await _waveformController!.setRate(_playbackSpeed);
       }
@@ -226,7 +221,6 @@ class _ExpandableRecordingCardState
     if (_isPlaying) {
       await _waveformController!.pausePlayer();
     } else {
-      // Claim global audio focus — all other cards will pause.
       ref.read(activeCardPlayerProvider.notifier).state = widget.recording.id;
       await _waveformController!.startPlayer();
     }
@@ -282,6 +276,7 @@ class _ExpandableRecordingCardState
             const SnackBar(
               content: Text('Backup failed. Please try again.'),
               backgroundColor: Colors.red,
+              duration: Duration(seconds: 2),
             ),
           );
         }
@@ -330,7 +325,6 @@ class _ExpandableRecordingCardState
               duration: Duration(seconds: 2),
             ),
           );
-          // If card is expanded, now we can load the waveform
           if (_isExpanded && _waveformController == null) {
             _initializeWaveform();
           }
@@ -514,7 +508,6 @@ class _ExpandableRecordingCardState
 
   @override
   Widget build(BuildContext context) {
-    // When another card claims focus, pause this one.
     ref.listen<String?>(activeCardPlayerProvider, (prev, next) {
       if (next != null &&
           next != widget.recording.id &&
@@ -527,294 +520,220 @@ class _ExpandableRecordingCardState
     final transcriptionState =
     ref.watch(transcriptionNotifierProvider(widget.recording.id));
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 1500),
-      curve: Curves.easeInOut,
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _isExpanded ? AppTheme.teal : AppTheme.mediumGray,
-          width: _isExpanded ? 2 : 1,
+    final selectedIds = ref.watch(selectionProvider);
+    final isSelected = selectedIds.contains(widget.recording.id);
+    final selectionModeActive = selectedIds.isNotEmpty;
+
+    return GestureDetector(
+      onTap: () {
+        if (selectionModeActive) {
+          ref.read(selectionProvider.notifier).toggle(widget.recording.id);
+        } else {
+          _toggleExpanded();
+        }
+      },
+      onLongPress: () {
+        if (!selectionModeActive) {
+          ref.read(selectionProvider.notifier).toggle(widget.recording.id);
+          if (_isExpanded) {
+            _toggleExpanded();
+          }
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? AppTheme.teal
+                : (_isExpanded ? AppTheme.teal : AppTheme.mediumGray),
+            width: (isSelected || _isExpanded) ? 2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: (isSelected || _isExpanded) ? 0.1 : 0.05),
+              blurRadius: (isSelected || _isExpanded) ? 8 : 4,
+              offset: Offset(0, (isSelected || _isExpanded) ? 4 : 2),
+            ),
+          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isExpanded ? 0.1 : 0.05),
-            blurRadius: _isExpanded ? 8 : 4,
-            offset: Offset(0, _isExpanded ? 4 : 2),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: [
-          // Header (always visible)
-          RecordingCardHeader(
-            recording: widget.recording,
-            isExpanded: _isExpanded,
-            isEditingTitle: _isEditingTitle,
-            titleController: _titleController,
-            isTranscribing: transcriptionState.isTranscribing,
-            onToggleExpand: _toggleExpanded,
-            onStartEditingTitle: _startEditingTitle,
-            onSaveTitle: _saveTitle,
-          ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            RecordingCardHeader(
+              recording: widget.recording,
+              isExpanded: _isExpanded,
+              isEditingTitle: _isEditingTitle,
+              titleController: _titleController,
+              isTranscribing: transcriptionState.isTranscribing,
+              onToggleExpand: _toggleExpanded,
+              onStartEditingTitle: _startEditingTitle,
+              onSaveTitle: _saveTitle,
+              isSelected: isSelected,
+              selectionModeActive: selectionModeActive,
+            ),
 
-          // Expanded content
-          if (_isExpanded) ...[
-            const SizedBox(height: 16),
+            if (_isExpanded && !selectionModeActive) ...[
+              const SizedBox(height: 16),
 
-            // Waveform Area — or placeholder when audio not yet downloaded
-            if (_audioAvailableLocally)
-              WaveformPlayerArea(
-                controller: _waveformController,
-              )
-            else
-              Container(
-                height: 64,
-                decoration: BoxDecoration(
-                  color: AppTheme.mediumGray.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+              if (_audioAvailableLocally)
+                WaveformPlayerArea(
+                  controller: _waveformController,
+                  recording: widget.recording,
+                )
+              else
+                Container(
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: AppTheme.mediumGray.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.cloud_download_outlined,
+                          size: 18,
+                          color: Theme.of(context).textTheme.displaySmall?.color,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Download audio to play',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).textTheme.displaySmall?.color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Center(
+
+              const SizedBox(height: 8),
+
+              if (_audioAvailableLocally)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(
-                        Icons.cloud_download_outlined,
-                        size: 18,
-                        color: Theme.of(context).textTheme.displaySmall?.color,
-                      ),
-                      const SizedBox(width: 8),
                       Text(
-                        'Download audio to play',
+                        _formatDuration(Duration(milliseconds: _currentPositionMs)),
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 11,
+                          color: Theme.of(context).textTheme.displaySmall?.color,
+                        ),
+                      ),
+                      if (!_isPlaying)
+                        Text(
+                          '← drag to seek →',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Theme.of(
+                              context,
+                            ).textTheme.displaySmall?.color?.withValues(alpha: 0.4),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      Text(
+                        widget.recording.formattedDuration,
+                        style: TextStyle(
+                          fontSize: 11,
                           color: Theme.of(context).textTheme.displaySmall?.color,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
 
-            const SizedBox(height: 8),
-
-            // ── Position / duration labels ─────────────────────────────
-            if (_audioAvailableLocally)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _formatDuration(Duration(milliseconds: _currentPositionMs)),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).textTheme.displaySmall?.color,
-                      ),
-                    ),
-                    // Drag hint — only show when not playing.
-                    if (!_isPlaying)
-                      Text(
-                        '← drag to seek →',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Theme.of(
-                            context,
-                          ).textTheme.displaySmall?.color?.withValues(alpha: 0.4),
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    Text(
-                      widget.recording.formattedDuration,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).textTheme.displaySmall?.color,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 16),
-
-            // ── Transport controls ─────────────────────────────────────
-            if (_audioAvailableLocally)
-              TransportControls(
-                isPlaying: _isPlaying,
-                currentSpeed: _playbackSpeed,
-                onPlayPause: _togglePlayPause,
-                onSkipForward: _skipForward,
-                onSkipBackward: _skipBackward,
-                onSpeedChanged: _setSpeed,
-              ),
-
-            const SizedBox(height: 16),
-
-            // ── Transcript preview ─────────────────────────────────────
-            TranscriptPreviewBox(recording: widget.recording),
-
-            if (widget.recording.transcript != null &&
-                widget.recording.transcript!.isNotEmpty)
               const SizedBox(height: 16),
 
-            // Feature hints strip (shown only on first-ever card expansion)
-            if (_showCardHints) ...[
-              _CardHintsStrip(
-                onDismiss: () {
-                  setState(() => _showCardHints = false);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+              if (_audioAvailableLocally)
+                TransportControls(
+                  isPlaying: _isPlaying,
+                  currentSpeed: _playbackSpeed,
+                  onPlayPause: _togglePlayPause,
+                  onSkipForward: _skipForward,
+                  onSkipBackward: _skipBackward,
+                  onSpeedChanged: _setSpeed,
+                ),
 
-            // Action Bar
-            RecordingActionBar(
-              recording: widget.recording,
-              isTranscribing: transcriptionState.isTranscribing,
-              isBackingUp: _isBackingUp,
-              backupProgress: _backupProgress,
-              backupError: _backupError,
-              isDownloading: _isDownloading,
-              downloadProgress: _downloadProgress,
-              downloadError: _downloadError,
-              audioAvailableLocally: _audioAvailableLocally,
-              onTranscribe: _transcribeRecording,
-              onBackup: _backupRecording,
-              onDownload: _downloadAudio,
-              onShare: _shareRecording,
-              onDelete: () => _showDeleteConfirmation(context),
-            ),
+              const SizedBox(height: 16),
+
+              TranscriptPreviewBox(recording: widget.recording),
+
+              if (widget.recording.transcript != null &&
+                  widget.recording.transcript!.isNotEmpty)
+                const SizedBox(height: 16),
+
+              if (_showCardHints) ...[
+                _CardHintsStrip(
+                  onDismiss: () {
+                    setState(() => _showCardHints = false);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+
+              RecordingActionBar(
+                recording: widget.recording,
+                isTranscribing: transcriptionState.isTranscribing,
+                isBackingUp: _isBackingUp,
+                backupProgress: _backupProgress,
+                backupError: _backupError,
+                isDownloading: _isDownloading,
+                downloadProgress: _downloadProgress,
+                downloadError: _downloadError,
+                audioAvailableLocally: _audioAvailableLocally,
+                onTranscribe: _transcribeRecording,
+                onBackup: _backupRecording,
+                onDownload: _downloadAudio,
+                onShare: _shareRecording,
+                onDelete: () => _showDeleteConfirmation(context),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 
   void _showDeleteConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Icon
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: AppTheme.orange.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.delete_outline_rounded,
-                  size: 32,
-                  color: AppTheme.orange,
-                ),
+    CustomDialog.show(
+      context,
+      icon: Icons.delete_outline_rounded,
+      title: 'Delete Recording',
+      message: 'Are you sure you want to delete this recording?',
+      isDestructive: true,
+      content: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppTheme.orange.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppTheme.orange, size: 20),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'This action cannot be undone.',
+                style: TextStyle(fontSize: 13, color: AppTheme.orange),
               ),
-              const SizedBox(height: 16),
-
-              // Title
-              Text(
-                'Delete Recording',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-
-              // Message
-              Text(
-                'Are you sure you want to delete this recording?',
-                style: Theme.of(context).textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-
-              // Warning!!!
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
-                          color: AppTheme.orange,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'This action cannot be undone.',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.orange,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // Action buttons
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: const BorderSide(color: AppTheme.mediumGray),
-                      ),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        ref
-                            .read(recordingProvider.notifier)
-                            .deleteRecording(widget.recording.id);
-                        Navigator.pop(context);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.orange,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: const Text(
-                        'Delete',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+      confirmText: 'Delete',
+      onConfirm: () {
+        ref
+            .read(recordingProvider.notifier)
+            .deleteRecording(widget.recording.id);
+      },
     );
   }
 
@@ -825,8 +744,6 @@ class _ExpandableRecordingCardState
     return '$twoDigitMinutes:$twoDigitSeconds';
   }
 }
-
-// ─── Card feature hints strip ─────────────────────────────────────────────────
 
 class _CardHintsStrip extends StatelessWidget {
   final VoidCallback onDismiss;

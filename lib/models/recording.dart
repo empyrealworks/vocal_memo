@@ -16,6 +16,9 @@ class Recording {
   String? transcript;
   bool isTranscribing;
   List<double>? waveformData = [];
+  
+  /// Number of audio channels (1 for mono, 2 for stereo).
+  final int numChannels;
 
   /// Firebase Storage download URL for the encrypted audio backup.
   /// Null until the user manually triggers a backup.
@@ -35,11 +38,14 @@ class Recording {
     this.transcript,
     this.isTranscribing = false,
     this.waveformData,
+    this.numChannels = 1,
     this.backupUrl,
   });
 
   /// Whether this recording has been backed up to Firebase Storage.
   bool get isBackedUp => backupUrl != null && backupUrl!.isNotEmpty;
+
+  bool get isStereo => numChannels == 2;
 
   String get displayTitle =>
       title ?? 'Memo ${DateFormat('MMM d, h:mm a').format(createdAt)}';
@@ -78,23 +84,11 @@ class Recording {
     'transcript': transcript,
     'isTranscribing': isTranscribing,
     'waveformData': waveformData,
+    'numChannels': numChannels,
     'backupUrl': backupUrl,
   };
 
   /// Cloud serialisation used for Firestore documents.
-  ///
-  /// Intentionally omits [waveformData] for two reasons:
-  ///   1. **Cost** — waveform arrays are hundreds of floats per recording.
-  ///      Storing them in Firestore inflates document size, increasing both
-  ///      storage cost and the bytes transferred on every `snapshots()` event.
-  ///   2. **Relevance** — waveform data is a rendering artefact derived from
-  ///      the local audio file. It is device-specific (depends on screen width)
-  ///      and can be regenerated on any device from the audio file itself.
-  ///
-  /// Also omits [filePath] because it is device-specific (the path differs
-  /// across Android, iOS, and installations). Each device resolves its own
-  /// local path and stores it in Hive; the cloud document carries [fileName]
-  /// and [backupUrl] so any device can reconstruct or download the file.
   Map<String, dynamic> toCloudJson() => {
     'id': id,
     'fileName': fileName,
@@ -107,9 +101,8 @@ class Recording {
     'folderId': folderId,
     'transcript': transcript,
     'isTranscribing': isTranscribing,
+    'numChannels': numChannels,
     'backupUrl': backupUrl,
-    // filePath is excluded — resolved per-device from fileName + backupUrl
-    // waveformData is excluded — large, device-specific, re-derivable
   };
 
   factory Recording.fromJson(Map<String, dynamic> json) => Recording(
@@ -127,6 +120,7 @@ class Recording {
     isTranscribing: json['isTranscribing'] as bool? ?? false,
     waveformData:
     List<double>.from(json['waveformData'] as List? ?? []),
+    numChannels: json['numChannels'] as int? ?? 1,
     backupUrl: json['backupUrl'] as String?,
   );
 
@@ -144,6 +138,7 @@ class Recording {
     String? transcript,
     bool? isTranscribing,
     List<double>? waveformData,
+    int? numChannels,
     String? backupUrl,
     bool clearBackupUrl = false,
   }) =>
@@ -160,7 +155,8 @@ class Recording {
         folderId: folderId ?? this.folderId,
         transcript: transcript ?? this.transcript,
         isTranscribing: isTranscribing ?? this.isTranscribing,
-        waveformData: waveformData,
+        waveformData: waveformData ?? this.waveformData,
+        numChannels: numChannels ?? this.numChannels,
         backupUrl: clearBackupUrl ? null : (backupUrl ?? this.backupUrl),
       );
 }

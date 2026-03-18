@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:record/record.dart';
+import 'package:vocal_memo/providers/recording_provider.dart';
 import 'package:vocal_memo/providers/settings_provider.dart';
+import 'package:vocal_memo/services/audio_service.dart';
 import 'package:vocal_memo/services/rating_service.dart';
+import 'package:vocal_memo/widgets/custom_dialog.dart';
 
 import '../models/recording_settings.dart';
-import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
+import '../providers/auth_provider.dart';
 import 'auth_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -16,6 +20,7 @@ class SettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.watch(settingsProvider.notifier);
     final authState = ref.watch(authStateProvider);
+    final devicesAsync = ref.watch(audioInputDevicesProvider);
 
     void updateSettings(RecordingSettings newSettings) {
       notifier.update(newSettings);
@@ -26,7 +31,6 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-
           // ── Account ─────────────────────────────────────────────────────
           const Text(
             "Account",
@@ -40,14 +44,15 @@ class SettingsScreen extends ConsumerWidget {
                 return ListTile(
                   leading: const Icon(Icons.person_add),
                   title: const Text("Create Account"),
-                  subtitle:
-                  const Text("Sign up for cloud backup & premium features"),
+                  subtitle: const Text(
+                    "Sign up for cloud backup & premium features",
+                  ),
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
-                        const AuthScreen(showBenefits: true),
+                            const AuthScreen(showBenefits: true),
                       ),
                     );
                   },
@@ -61,8 +66,7 @@ class SettingsScreen extends ConsumerWidget {
                     leading: const Icon(Icons.account_circle),
                     title: const Text("Account"),
                     subtitle: Text(user.email ?? 'Signed in'),
-                    trailing:
-                    const Icon(Icons.verified, color: Colors.green),
+                    trailing: const Icon(Icons.verified, color: Colors.green),
                   ),
 
                   // Sign Out
@@ -70,96 +74,34 @@ class SettingsScreen extends ConsumerWidget {
                     leading: const Icon(Icons.logout),
                     title: const Text("Sign Out"),
                     onTap: () async {
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => Dialog(
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 64, height: 64,
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.orange
-                                        .withValues(alpha: 0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(Icons.logout,
-                                      size: 32, color: AppTheme.orange),
-                                ),
-                                const SizedBox(height: 16),
-                                Text('Sign Out',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineSmall
-                                        ?.copyWith(
-                                        fontWeight: FontWeight.bold),
-                                    textAlign: TextAlign.center),
-                                const SizedBox(height: 12),
-                                Text('Are you sure you want to sign out?',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium,
-                                    textAlign: TextAlign.center),
-                                const SizedBox(height: 24),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      flex: 2,
-                                      child: OutlinedButton(
-                                        onPressed: () =>
-                                            Navigator.pop(context, false),
-                                        style: OutlinedButton.styleFrom(
-                                          padding: const EdgeInsets
-                                              .symmetric(vertical: 12),
-                                          side: const BorderSide(
-                                              color: AppTheme.mediumGray),
-                                        ),
-                                        child: const Text('Cancel'),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: ElevatedButton(
-                                        onPressed: () =>
-                                            Navigator.pop(context, true),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: AppTheme.orange,
-                                          padding: const EdgeInsets
-                                              .symmetric(vertical: 12),
-                                        ),
-                                        child: const Text('Sign Out',
-                                            style: TextStyle(
-                                                color: Colors.white,
-                                                fontWeight:
-                                                FontWeight.w600)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      CustomDialog.show(
+                        context,
+                        icon: Icons.logout,
+                        iconColor: AppTheme.orange,
+                        title: 'Sign Out',
+                        message: 'Are you sure you want to sign out?',
+                        confirmText: 'Sign Out',
+                        confirmColor: AppTheme.orange,
+                        onConfirm: () async {
+                          await ref.read(authServiceProvider).signOut();
+                        },
                       );
-
-                      if (confirm == true) {
-                        await ref.read(authServiceProvider).signOut();
-                      }
                     },
                   ),
 
                   // Delete Account (deferred 30-day flow)
                   ListTile(
-                    leading:
-                    const Icon(Icons.delete_forever, color: Colors.red),
-                    title: const Text("Delete Account",
-                        style: TextStyle(color: Colors.red)),
-                    subtitle:
-                    const Text("Request permanent deletion of your data"),
+                    leading: const Icon(
+                      Icons.delete_forever,
+                      color: Colors.red,
+                    ),
+                    title: const Text(
+                      "Delete Account",
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    subtitle: const Text(
+                      "Request permanent deletion of your data",
+                    ),
                     onTap: () =>
                         _showDeletionRequestSheet(context, ref, user.email),
                   ),
@@ -215,31 +157,80 @@ class SettingsScreen extends ConsumerWidget {
           // Beep toggle — new in v1.3.0
           SwitchListTile(
             title: const Text("Recording Beeps"),
-            subtitle: const Text(
-              "Play a tone before and after each recording",
-            ),
+            subtitle: const Text("Play a tone before and after each recording"),
             secondary: const Icon(Icons.notifications_active_outlined),
             value: settings.enableBeeps,
-            onChanged: (v) =>
-                updateSettings(settings.copyWith(enableBeeps: v)),
+            onChanged: (v) => updateSettings(settings.copyWith(enableBeeps: v)),
           ),
 
-          ListTile(
-            title: const Text("Recording Device"),
-            subtitle: const Text("Choose input source"),
-            leading: const Icon(Icons.mic_external_on_outlined),
-            trailing: DropdownButton<String>(
-              value: settings.device,
-              items: const [
-                DropdownMenuItem(
-                    value: "Default Microphone",
-                    child: Text("Default")),
-                DropdownMenuItem(
-                    value: "External Mic", child: Text("External Mic")),
-              ],
-              onChanged: (v) => updateSettings(settings.copyWith(device: v!)),
+          devicesAsync.when(
+            data: (devices) {
+              final items = [
+                const DropdownMenuItem(
+                  value: "Default Microphone",
+                  child: Text("Default"),
+                ),
+                ...devices.map((d) {
+                  return DropdownMenuItem(
+                    value: d.id,
+                    child: Text(
+                      AudioService.cleanDeviceLabel(d.label), 
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }),
+              ];
+
+              final currentDevice = items.any((i) => i.value == settings.device)
+                  ? settings.device
+                  : "Default Microphone";
+
+              return ListTile(
+                title: const Text("Recording Device"),
+                subtitle: const Text("Tap to re-scan for devices"),
+                leading: const Icon(Icons.mic_external_on_outlined),
+                trailing: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 150),
+                  child: DropdownButton<String>(
+                    value: currentDevice,
+                    isExpanded: true,
+                    items: items,
+                    onChanged: (v) =>
+                        updateSettings(settings.copyWith(device: v!)),
+                  ),
+                ),
+                onTap: () => ref.invalidate(audioInputDevicesProvider),
+              );
+            },
+            loading: () => const ListTile(
+              title: Text("Recording Device"),
+              subtitle: Text("Searching for devices…"),
+              leading: Icon(Icons.mic_external_on_outlined),
+              trailing: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+            error: (e, _) => ListTile(
+              title: const Text("Recording Device"),
+              subtitle: Text("Could not load devices: $e"),
+              leading: const Icon(Icons.mic_external_on_outlined),
+              onTap: () => ref.invalidate(audioInputDevicesProvider),
             ),
           ),
+
+          // Stereo Recording toggle — only shown when "Default" is selected
+          // because selecting specific mics often restricts to mono.
+          if (settings.device == "Default Microphone")
+            SwitchListTile(
+              title: const Text("Stereo Recording"),
+              subtitle: const Text("Capture audio from dual internal mics"),
+              secondary: const Icon(Icons.speaker_group_outlined),
+              value: settings.stereoRecording,
+              onChanged: (v) => updateSettings(settings.copyWith(stereoRecording: v)),
+            ),
+
           ListTile(
             title: const Text("Bitrate (kbps)"),
             subtitle: Slider(
@@ -282,8 +273,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           SwitchListTile(
             title: const Text("Show Live Waveform"),
-            subtitle:
-            const Text("Display real-time waveform during recording"),
+            subtitle: const Text("Display real-time waveform during recording"),
             secondary: const Icon(Icons.waves_outlined),
             value: settings.showWaveform,
             inactiveTrackColor: Colors.grey,
@@ -323,7 +313,9 @@ class SettingsScreen extends ConsumerWidget {
               value: settings.themeMode,
               items: const [
                 DropdownMenuItem(
-                    value: "System", child: Text("System Default")),
+                  value: "System",
+                  child: Text("System Default"),
+                ),
                 DropdownMenuItem(value: "Light", child: Text("Light")),
                 DropdownMenuItem(value: "Dark", child: Text("Dark")),
               ],
@@ -370,10 +362,10 @@ class SettingsScreen extends ConsumerWidget {
   // the user is signed out. You process it manually within 30 days.
 
   Future<void> _showDeletionRequestSheet(
-      BuildContext context,
-      WidgetRef ref,
-      String? email,
-      ) async {
+    BuildContext context,
+    WidgetRef ref,
+    String? email,
+  ) async {
     final reasonController = TextEditingController();
     bool submitting = false;
 
@@ -399,8 +391,9 @@ class SettingsScreen extends ConsumerWidget {
               ),
               decoration: BoxDecoration(
                 color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
               ),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
@@ -411,7 +404,8 @@ class SettingsScreen extends ConsumerWidget {
                     // Handle bar
                     Center(
                       child: Container(
-                        width: 40, height: 4,
+                        width: 40,
+                        height: 4,
                         decoration: BoxDecoration(
                           color: AppTheme.mediumGray,
                           borderRadius: BorderRadius.circular(2),
@@ -424,13 +418,17 @@ class SettingsScreen extends ConsumerWidget {
                     Row(
                       children: [
                         Container(
-                          width: 44, height: 44,
+                          width: 44,
+                          height: 44,
                           decoration: BoxDecoration(
                             color: Colors.red.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.delete_forever,
-                              color: Colors.red, size: 24),
+                          child: const Icon(
+                            Icons.delete_forever,
+                            color: Colors.red,
+                            size: 24,
+                          ),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -443,14 +441,16 @@ class SettingsScreen extends ConsumerWidget {
                                     .textTheme
                                     .titleLarge
                                     ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red,
-                                ),
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red,
+                                    ),
                               ),
                               const Text(
                                 'Permanent — cannot be undone',
                                 style: TextStyle(
-                                    fontSize: 12, color: Colors.red),
+                                  fontSize: 12,
+                                  color: Colors.red,
+                                ),
                               ),
                             ],
                           ),
@@ -466,7 +466,8 @@ class SettingsScreen extends ConsumerWidget {
                         color: Colors.red.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                            color: Colors.red.withValues(alpha: 0.2)),
+                          color: Colors.red.withValues(alpha: 0.2),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,7 +475,9 @@ class SettingsScreen extends ConsumerWidget {
                           const Text(
                             'The following will be permanently deleted:',
                             style: TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 13),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
                           ),
                           const SizedBox(height: 10),
                           for (final item in [
@@ -487,13 +490,17 @@ class SettingsScreen extends ConsumerWidget {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.remove_circle_outline,
-                                      size: 16, color: Colors.red),
+                                  const Icon(
+                                    Icons.remove_circle_outline,
+                                    size: 16,
+                                    color: Colors.red,
+                                  ),
                                   const SizedBox(width: 8),
                                   Expanded(
-                                    child: Text(item,
-                                        style: const TextStyle(
-                                            fontSize: 13)),
+                                    child: Text(
+                                      item,
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -502,14 +509,19 @@ class SettingsScreen extends ConsumerWidget {
                           const Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.info_outline,
-                                  size: 16, color: AppTheme.teal),
+                              Icon(
+                                Icons.info_outline,
+                                size: 16,
+                                color: AppTheme.teal,
+                              ),
                               SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   'Local recordings on this device are NOT deleted.',
                                   style: TextStyle(
-                                      fontSize: 13, color: AppTheme.teal),
+                                    fontSize: 13,
+                                    color: AppTheme.teal,
+                                  ),
                                 ),
                               ),
                             ],
@@ -526,19 +538,24 @@ class SettingsScreen extends ConsumerWidget {
                         color: AppTheme.orange.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: AppTheme.orange.withValues(alpha: 0.25)),
+                          color: AppTheme.orange.withValues(alpha: 0.25),
+                        ),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.schedule,
-                              color: AppTheme.orange, size: 18),
+                          Icon(
+                            Icons.schedule,
+                            color: AppTheme.orange,
+                            size: 18,
+                          ),
                           SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               'Your data will be deleted within 30 days of your request.',
                               style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppTheme.orange),
+                                fontSize: 13,
+                                color: AppTheme.orange,
+                              ),
                             ),
                           ),
                         ],
@@ -548,32 +565,37 @@ class SettingsScreen extends ConsumerWidget {
 
                     // Account email (read-only)
                     if (email != null) ...[
-                      Text('Account',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelMedium
-                              ?.copyWith(fontWeight: FontWeight.w600)),
+                      Text(
+                        'Account',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
                       const SizedBox(height: 6),
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
                         decoration: BoxDecoration(
                           color: AppTheme.mediumGray.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Text(email,
-                            style: const TextStyle(fontSize: 14)),
+                        child: Text(
+                          email,
+                          style: const TextStyle(fontSize: 14),
+                        ),
                       ),
                       const SizedBox(height: 16),
                     ],
 
                     // Reason dropdown
-                    Text('Reason (optional)',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelMedium
-                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(
+                      'Reason (optional)',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
                       value: selectedReason,
@@ -582,11 +604,20 @@ class SettingsScreen extends ConsumerWidget {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                       ),
                       items: reasons
-                          .map((r) => DropdownMenuItem(
-                          value: r, child: Text(r, style: const TextStyle(fontSize: 14))))
+                          .map(
+                            (r) => DropdownMenuItem(
+                              value: r,
+                              child: Text(
+                                r,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ),
+                          )
                           .toList(),
                       onChanged: (v) =>
                           setSheetState(() => selectedReason = v!),
@@ -599,7 +630,8 @@ class SettingsScreen extends ConsumerWidget {
                         decoration: InputDecoration(
                           hintText: 'Tell us more (optional)…',
                           border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                           contentPadding: const EdgeInsets.all(12),
                         ),
                       ),
@@ -616,12 +648,13 @@ class SettingsScreen extends ConsumerWidget {
                                 ? null
                                 : () => Navigator.pop(sheetContext),
                             style: OutlinedButton.styleFrom(
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               side: const BorderSide(
-                                  color: AppTheme.mediumGray),
+                                color: AppTheme.mediumGray,
+                              ),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                             child: const Text('Cancel'),
                           ),
@@ -632,60 +665,65 @@ class SettingsScreen extends ConsumerWidget {
                             onPressed: submitting
                                 ? null
                                 : () async {
-                              setSheetState(() => submitting = true);
-                              try {
-                                final fullReason =
-                                selectedReason == 'Other' &&
-                                    reasonController
-                                        .text
-                                        .trim()
-                                        .isNotEmpty
-                                    ? reasonController.text.trim()
-                                    : selectedReason;
+                                    setSheetState(() => submitting = true);
+                                    try {
+                                      final fullReason =
+                                          selectedReason == 'Other' &&
+                                              reasonController.text
+                                                  .trim()
+                                                  .isNotEmpty
+                                          ? reasonController.text.trim()
+                                          : selectedReason;
 
-                                await ref
-                                    .read(authServiceProvider)
-                                    .submitDeletionRequest(
-                                    reason: fullReason);
+                                      await ref
+                                          .read(authServiceProvider)
+                                          .submitDeletionRequest(
+                                            reason: fullReason,
+                                          );
 
-                                if (context.mounted) {
-                                  Navigator.pop(sheetContext);
-                                  _showDeletionConfirmation(context);
-                                }
-                              } catch (e) {
-                                setSheetState(
-                                        () => submitting = false);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context)
-                                      .showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          'Failed to submit: $e'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
+                                      if (context.mounted) {
+                                        Navigator.pop(sheetContext);
+                                        _showDeletionConfirmation(context);
+                                      }
+                                    } catch (e) {
+                                      setSheetState(() => submitting = false);
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Failed to submit: $e',
+                                            ),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.red,
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                             child: submitting
                                 ? const SizedBox(
-                              width: 18, height: 18,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2),
-                            )
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
                                 : const Text(
-                              'Submit Request',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600),
-                            ),
+                                    'Submit Request',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
@@ -705,36 +743,39 @@ class SettingsScreen extends ConsumerWidget {
       context: context,
       barrierDismissible: false,
       builder: (context) => Dialog(
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.all(28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 64, height: 64,
+                width: 64,
+                height: 64,
                 decoration: BoxDecoration(
                   color: AppTheme.teal.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check_circle_outline,
-                    color: AppTheme.teal, size: 36),
+                child: const Icon(
+                  Icons.check_circle_outline,
+                  color: AppTheme.teal,
+                  size: 36,
+                ),
               ),
               const SizedBox(height: 16),
               Text(
                 'Request Submitted',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
               const Text(
                 'Your deletion request has been received. '
-                    'Your account and all associated cloud data will be '
-                    'permanently deleted within 30 days.\n\n'
-                    'You have been signed out.',
+                'Your account and all associated cloud data will be '
+                'permanently deleted within 30 days.\n\n'
+                'You have been signed out.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 14, height: 1.5),
               ),
@@ -746,12 +787,16 @@ class SettingsScreen extends ConsumerWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.teal,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  child: const Text('OK',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600)),
+                  child: const Text(
+                    'OK',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],

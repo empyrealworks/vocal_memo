@@ -5,11 +5,11 @@
 // as the single audio dependency for the whole project.
 
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -32,6 +32,7 @@ class AudioService {
   Duration _accumulatedDuration = Duration.zero;
   DateTime? _pauseStartTime;
   bool _isPaused = false;
+  int _currentChannels = 1;
 
   // Stored at startRecording so stopRecording honours the same setting.
   bool _enableBeeps = true;
@@ -42,6 +43,79 @@ class AudioService {
     return _audioRecorder.hasPermission();
   }
 
+  /// Requests permissions for Bluetooth / nearby devices on Android 12+.
+  Future<bool> requestNearbyDevicesPermission() async {
+    if (Platform.isAndroid) {
+      final status = await Permission.bluetoothConnect.request();
+      return status.isGranted;
+    }
+    return true; // Not required on other platforms for basic listing
+  }
+
+  /// Lists available audio input devices (including Bluetooth and wired).
+  Future<List<InputDevice>> listInputDevices() async {
+    // Attempting to request permission here ensures devices like Bluetooth
+    // headsets are visible to the package.
+    await requestNearbyDevicesPermission();
+    return _audioRecorder.listInputDevices();
+  }
+
+  /// Cleans up long, cluttered hardware labels from the `record` package.
+  ///
+  /// Example mappings:
+  /// - "Device (built-in microphone, bottom)" -> "Internal Mic (Bottom)"
+  /// - "Device (Bluetooth telephony SCO, ...)" -> "Device (Bluetooth)"
+  static String cleanDeviceLabel(String label) {
+    if (label == "Default Microphone") return "Default";
+
+    // Check for internal microphones
+    if (label.contains('built-in microphone')) {
+      final parts = label.split(',');
+      if (parts.length > 1) {
+        final location = parts.last.replaceAll(')', '').trim();
+        return 'Internal Mic (${location[0].toUpperCase()}${location.substring(1)})';
+      }
+      return 'Internal Mic';
+    }
+
+    // Check for Bluetooth devices
+    if (label.toLowerCase().contains('bluetooth')) {
+      final parenIndex = label.indexOf('(');
+      if (parenIndex != -1) {
+        final name = label.substring(0, parenIndex).trim();
+        return '$name (Bluetooth)';
+      }
+      return label;
+    }
+
+    // Check for FM Tuner
+    if (label.toLowerCase().contains('fm tuner')) {
+      return 'FM Tuner';
+    }
+
+    // For everything else, strip the device model name if it's outside parens
+    // and just show what's inside if the outside part is long.
+    final parenIndex = label.indexOf('(');
+    if (parenIndex > 10) {
+      // arbitrary length to catch model names
+      final description = label
+          .substring(parenIndex)
+          .replaceAll('(', '')
+          .replaceAll(')', '')
+          .trim();
+      if (description.isNotEmpty) {
+        return description[0].toUpperCase() + description.substring(1);
+      }
+    }
+
+    return label;
+  }
+
+  // ── Amplitude Stream ─────────────────────────────────────────────────────
+
+  Stream<Amplitude> get onAmplitudeChanged =>
+      _audioRecorder.onAmplitudeChanged(const Duration(milliseconds: 100));
+
   // ── Beep ─────────────────────────────────────────────────────────────────
 
   /// Plays a beep from [assets/sounds/].
@@ -50,31 +124,35 @@ class AudioService {
   /// [PlayerController]. The controller is disposed after the tone finishes.
   Future<void> _playBeep(bool isStart) async {
     PlayerController? beepController;
-    File? file;
+
+    File? tempFile;
 
     try {
       final assetKey =
           'assets/sounds/${isStart ? 'start_beep' : 'stop_beep'}.mp3';
 
       // Load asset bytes from bundle.
-      final audioFile = await rootBundle.load(assetKey);
-      final appDirectory = await getApplicationDocumentsDirectory();
+      final ByteData byteData = await rootBundle.load(assetKey);
+      final Uint8List bytes = byteData.buffer.asUint8List();
 
-      file = File('${appDirectory.path}/${isStart ? 'start' : 'stop'}_beep.mp3');
-      await file.writeAsBytes(audioFile.buffer.asUint8List());
+      // Write to temp dir (reuses same filename each time — no leaking files).
+      final tempDir = await getTemporaryDirectory();
+      final tempPath = '${tempDir.path}/${isStart ? 'start' : 'stop'}_beep.mp3';
+      tempFile = File(tempPath);
+      await tempFile.writeAsBytes(bytes, flush: true);
 
       // Play with a dedicated controller.
       beepController = PlayerController();
-      beepController.setFinishMode(finishMode: FinishMode.stop);
       await beepController.preparePlayer(
-        path: file.path,
+        path: tempPath,
         shouldExtractWaveform: false,
       );
       await beepController.startPlayer();
 
       // Wait for natural completion (with a 3-second safety timeout).
-      await beepController.onCompletion.first
-          .timeout(const Duration(seconds: 3));
+      await beepController.onCompletion.first.timeout(
+        const Duration(seconds: 3),
+      );
 
       // Extra gap to ensure no bleed into the recording microphone open.
       await Future.delayed(const Duration(milliseconds: 150));
@@ -122,6 +200,41 @@ class AudioService {
       _accumulatedDuration = Duration.zero;
       _isPaused = false;
 
+      // Handle custom input device selection
+      InputDevice? selectedDevice;
+      if (settings.device != "Default Microphone") {
+        final devices = await listInputDevices();
+        try {
+          // Find device by ID or Label
+          selectedDevice = devices.firstWhere(
+            (d) => d.id == settings.device || d.label == settings.device,
+          );
+        } catch (_) {
+          if (kDebugMode) {
+            print(
+              'Selected device "${settings.device}" not found, using default.',
+            );
+          }
+        }
+      }
+
+      // Stereo (2 channels) works best on the "Default" system device where the
+      // OS can manage the dual internal mics. Selecting a specific hardware
+      // port ID usually results in a mono stream from that specific mic.
+      _currentChannels = (settings.stereoRecording && selectedDevice == null)
+          ? 2
+          : 1;
+
+      if (kDebugMode) {
+        print('🎙️ [RecordConfig] AutoGain: ${settings.autoGainControl}');
+        print('🎙️ [RecordConfig] NoiseSuppress: ${settings.noiseSuppression}');
+        print('🎙️ [RecordConfig] EchoCancel: ${settings.echoCancellation}');
+        print('🎙️ [RecordConfig] Channels: $_currentChannels');
+        print(
+          '🎙️ [RecordConfig] Device: ${selectedDevice?.label ?? "Default"}',
+        );
+      }
+
       await _audioRecorder.start(
         RecordConfig(
           encoder: _getEncoderFromFormat(settings.audioFormat),
@@ -130,7 +243,8 @@ class AudioService {
           autoGain: settings.autoGainControl,
           noiseSuppress: settings.noiseSuppression,
           echoCancel: settings.echoCancellation,
-          numChannels: 1,
+          numChannels: _currentChannels,
+          device: selectedDevice,
         ),
         path: _currentRecordingPath!,
       );
@@ -146,11 +260,16 @@ class AudioService {
 
   AudioEncoder _getEncoderFromFormat(String format) {
     switch (format) {
-      case 'wav':  return AudioEncoder.wav;
-      case 'aac':  return AudioEncoder.aacLc;
-      case 'm4a':  return AudioEncoder.aacLc;
-      case 'flac': return AudioEncoder.flac;
-      default:     return AudioEncoder.aacLc;
+      case 'wav':
+        return AudioEncoder.wav;
+      case 'aac':
+        return AudioEncoder.aacLc;
+      case 'm4a':
+        return AudioEncoder.aacLc;
+      case 'flac':
+        return AudioEncoder.flac;
+      default:
+        return AudioEncoder.aacLc;
     }
   }
 
@@ -168,8 +287,7 @@ class AudioService {
       if (path == null || _currentRecordingPath == null) return null;
 
       if (!_isPaused && _recordingStartTime != null) {
-        _accumulatedDuration +=
-            DateTime.now().difference(_recordingStartTime!);
+        _accumulatedDuration += DateTime.now().difference(_recordingStartTime!);
       }
 
       if (_enableBeeps) {
@@ -184,6 +302,7 @@ class AudioService {
         filePath: file.path,
         createdAt: DateTime.now().subtract(_accumulatedDuration),
         duration: _accumulatedDuration,
+        numChannels: _currentChannels,
       );
 
       _currentRecordingPath = null;
@@ -205,8 +324,7 @@ class AudioService {
     try {
       await _audioRecorder.pause();
       if (!_isPaused && _recordingStartTime != null) {
-        _accumulatedDuration +=
-            DateTime.now().difference(_recordingStartTime!);
+        _accumulatedDuration += DateTime.now().difference(_recordingStartTime!);
         _pauseStartTime = DateTime.now();
         _isPaused = true;
       }
@@ -254,6 +372,23 @@ class AudioService {
     } catch (e) {
       if (kDebugMode) print('Error discarding: $e');
       await WakelockPlus.disable();
+    }
+  }
+
+  /// Extracts waveform data for caching.
+  Future<List<double>> extractWaveformData(String path) async {
+    final controller = PlayerController();
+    try {
+      // Use the extraction API from the latest documentation snippet
+      return await controller.waveformExtraction.extractWaveformData(
+        path: path,
+        noOfSamples: 100, // Pre-calculate 100 points for the summary waveform
+      );
+    } catch (e) {
+      if (kDebugMode) print('Error extracting waveform: $e');
+      return [];
+    } finally {
+      controller.dispose();
     }
   }
 
