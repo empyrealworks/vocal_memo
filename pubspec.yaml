@@ -57,6 +57,7 @@ dependencies:
   encrypt: ^5.0.3
   firebase_storage: ^12.4.10
   connectivity_plus: ^7.0.0
+  firebase_app_check: ^0.3.2+10
 
 dev_dependencies:
   flutter_launcher_icons: "^0.14.4"

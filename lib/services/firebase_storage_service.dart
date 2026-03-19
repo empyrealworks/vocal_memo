@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'auth_service.dart';
 import 'connectivity_service.dart';
-import 'encryption _service.dart';
+import 'encryption_service.dart';
 
 /// Thrown when an upload or download is attempted while the device is offline.
 class OfflineException implements Exception {

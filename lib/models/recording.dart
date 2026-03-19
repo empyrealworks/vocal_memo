@@ -1,6 +1,6 @@
 // lib/models/recording.dart
 import 'package:intl/intl.dart';
-import 'package:vocal_memo/services/encryption%20_service.dart';
+import 'package:vocal_memo/services/encryption_service.dart';
 
 class Recording {
   final String id;

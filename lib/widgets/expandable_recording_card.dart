@@ -596,13 +596,13 @@ class _ExpandableRecordingCardState
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.cloud_download_outlined,
+                          widget.recording.isBackedUp ? Icons.cloud_download_outlined : Icons.cloud_off_rounded,
                           size: 18,
                           color: Theme.of(context).textTheme.displaySmall?.color,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Download audio to play',
+                          widget.recording.isBackedUp ? 'Download audio to play' : 'Audio not uploaded yet',
                           style: TextStyle(
                             fontSize: 13,
                             color: Theme.of(context).textTheme.displaySmall?.color,

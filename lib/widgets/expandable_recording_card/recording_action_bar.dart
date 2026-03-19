@@ -186,6 +186,18 @@ class RecordingActionBar extends ConsumerWidget {
               );
             }
 
+            // ── AUDIO NOT LOCAL AND NOT BACKED UP → waiting for device sync ──
+            if (!audioAvailableLocally && !recording.isBackedUp) {
+              return const Tooltip(
+                message: 'Waiting for device sync…',
+                child: IconButton(
+                  icon: Icon(Icons.sync_rounded),
+                  color: AppTheme.mediumGray,
+                  onPressed: null,
+                ),
+              );
+            }
+
             // ── UPLOADING STATE ──
             if (isBackingUp) {
               return Tooltip(
@@ -232,8 +244,8 @@ class RecordingActionBar extends ConsumerWidget {
         IconButton(
           icon: const Icon(Icons.share_rounded),
           color: AppTheme.teal,
-          onPressed: onShare,
-          tooltip: 'Share',
+          onPressed: audioAvailableLocally ? onShare : null,
+          tooltip: audioAvailableLocally ? 'Share' : 'Download to share',
         ),
 
         // ── Delete Button ──

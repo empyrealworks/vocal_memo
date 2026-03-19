@@ -2,7 +2,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod/legacy.dart';
-import '../services/encryption _service.dart';
+import '../services/encryption_service.dart';
 import '../services/gemini_transcription_service.dart';
 import '../models/recording.dart';
 import 'auth_provider.dart';

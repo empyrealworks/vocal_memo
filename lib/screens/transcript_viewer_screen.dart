@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import '../services/encryption _service.dart';
+import '../services/encryption_service.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
 import '../providers/recording_provider.dart';
