@@ -1,29 +1,21 @@
 // lib/widgets/waveform_player_area.dart
 
-// ── Scrollable waveform timeline ──────────────────────────
-//
-// WaveformType.long behaviour:
-//   • The rendered waveform is wider than the widget.
-//   • The seek line stays centred; the waveform scrolls left
-//     as audio plays — exactly like a DAW timeline.
-//   • Drag anywhere on the waveform to seek. The plugin
-//     handles gestures internally, so no GestureDetector overlay.
-//   • Completed portion (left of seek line) is rendered in
-//     liveWaveColor; upcoming portion in fixedWaveColor.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audio_waveforms/audio_waveforms.dart';
 
+import '../../models/recording.dart';
 import '../../providers/settings_provider.dart';
 import '../../theme/app_theme.dart';
 
 class WaveformPlayerArea extends ConsumerWidget {
   final PlayerController? controller;
+  final Recording recording;
 
   const WaveformPlayerArea({
     super.key,
     required this.controller,
+    required this.recording,
   });
 
   @override
@@ -40,6 +32,17 @@ class WaveformPlayerArea extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final waveStyle = PlayerWaveStyle(
+          fixedWaveColor: AppTheme.teal.withValues(alpha: 0.25),
+          liveWaveColor: AppTheme.teal,
+          spacing: 3,
+          waveThickness: 2,
+          showSeekLine: true,
+          seekLineColor: AppTheme.orange,
+          seekLineThickness: 2,
+          scrollScale: 1.2,
+        );
+
         return Container(
           height: 88,
           decoration: BoxDecoration(
@@ -48,22 +51,22 @@ class WaveformPlayerArea extends ConsumerWidget {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AudioFileWaveforms(
-              size: Size(constraints.maxWidth, 88),
-              playerController: controller!,
-              waveformType: WaveformType.long,
-              enableSeekGesture: true,
-              playerWaveStyle: PlayerWaveStyle(
-                fixedWaveColor: AppTheme.teal.withValues(alpha: 0.25),
-                liveWaveColor: AppTheme.teal,
-                spacing: 3,
-                waveThickness: 2,
-                showSeekLine: true,
-                seekLineColor: AppTheme.orange,
-                seekLineThickness: 2,
-                scrollScale: 1.2,
-              ),
-            ),
+            child: recording.waveformData != null && recording.waveformData!.isNotEmpty
+                ? AudioFileWaveforms(
+                    size: Size(constraints.maxWidth, 88),
+                    playerController: controller!,
+                    waveformType: WaveformType.long,
+                    waveformData: recording.waveformData!,
+                    enableSeekGesture: true,
+                    playerWaveStyle: waveStyle,
+                  )
+                : AudioFileWaveforms(
+                    size: Size(constraints.maxWidth, 88),
+                    playerController: controller!,
+                    waveformType: WaveformType.long,
+                    enableSeekGesture: true,
+                    playerWaveStyle: waveStyle,
+                  ),
           ),
         );
       },

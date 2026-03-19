@@ -1,7 +1,9 @@
 // lib/screens/live_recording_screen.dart
+import 'dart:async';
 import 'dart:math' as Math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:record/record.dart';
 import 'package:vocal_memo/models/recording_settings.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
@@ -20,6 +22,10 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   bool _isRecording = false;
   bool _isPaused = false;
   Duration _recordingTime = Duration.zero;
+  
+  StreamSubscription<Amplitude>? _amplitudeSub;
+  final List<double> _amplitudes = [];
+  static const int _maxAmplitudes = 60;
 
   @override
   void initState() {
@@ -30,14 +36,12 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   @override
   void dispose() {
     _stopwatch.stop();
+    _amplitudeSub?.cancel();
     super.dispose();
   }
 
   // ─── Guard ────────────────────────────────────────────────────
 
-  /// Called whenever the user tries to leave (back gesture, X button, etc.).
-  /// If recording is in progress, asks whether to stop-and-save or discard.
-  /// Returns true when it's safe to pop.
   Future<bool> _onWillPop() async {
     if (!_isRecording) return true;
 
@@ -77,7 +81,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
-              // Stop & Save
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -95,7 +98,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // Discard
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -112,7 +114,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // Keep recording
               TextButton(
                 onPressed: () =>
                     Navigator.of(ctx).pop(_ExitChoice.keepRecording),
@@ -131,18 +132,29 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
     if (result == _ExitChoice.stopAndSave) {
       await _stopRecording();
-      return false; // _stopRecording already pops
+      return false;
     }
 
-    // Discard: stop the engine silently without saving
     await _discardRecording();
-    return false; // we pop manually below
+    return false;
   }
 
   // ─── Recording lifecycle ─────────────────────────────────────
 
   void _startRecording(RecordingSettings settings) async {
     await ref.read(recordingProvider.notifier).startRecording(settings);
+    
+    _amplitudeSub = ref.read(audioServiceProvider).onAmplitudeChanged.listen((amp) {
+      if (mounted) {
+        setState(() {
+          _amplitudes.add(amp.current);
+          if (_amplitudes.length > _maxAmplitudes) {
+            _amplitudes.removeAt(0);
+          }
+        });
+      }
+    });
+
     _stopwatch.start();
     setState(() {
       _isRecording = true;
@@ -161,18 +173,21 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   Future<void> _pauseRecording() async {
     await ref.read(recordingProvider.notifier).pauseRecording();
     _stopwatch.stop();
+    _amplitudeSub?.pause();
     setState(() => _isPaused = true);
   }
 
   Future<void> _resumeRecording() async {
     await ref.read(recordingProvider.notifier).resumeRecording();
     _stopwatch.start();
+    _amplitudeSub?.resume();
     setState(() => _isPaused = false);
     _updateTime();
   }
 
   Future<void> _stopRecording() async {
     _stopwatch.stop();
+    _amplitudeSub?.cancel();
     setState(() {
       _isRecording = false;
       _isPaused = false;
@@ -183,11 +198,11 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
   Future<void> _discardRecording() async {
     _stopwatch.stop();
+    _amplitudeSub?.cancel();
     setState(() {
       _isRecording = false;
       _isPaused = false;
     });
-    // Stop the audio engine without saving
     await ref.read(recordingProvider.notifier).discardRecording();
     if (mounted) Navigator.pop(context);
   }
@@ -197,9 +212,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
+    final bool isStereo = settings.stereoRecording && settings.device == "Default Microphone";
 
     return PopScope(
-      // canPop: false makes Flutter call onPopInvokedWithResult before popping
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
@@ -210,7 +225,6 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.close),
-            // Route through the same guard as the system back gesture
             onPressed: () async {
               final canLeave = await _onWillPop();
               if (canLeave && mounted) Navigator.of(context).pop();
@@ -229,8 +243,8 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                   // Waveform animation
                   Container(
                     width: double.infinity,
-                    height: 150,
-                    margin: const EdgeInsets.all(24),
+                    height: 160,
+                    margin: const EdgeInsets.symmetric(horizontal: 24),
                     decoration: BoxDecoration(
                       color: AppTheme.teal.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(12),
@@ -238,19 +252,18 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                     child: Center(
                       child: _isRecording
                           ? CustomPaint(
-                        painter: AnimatedWaveformPainter(
-                          color: AppTheme.teal,
-                          animationValue:
-                          (_stopwatch.elapsedMilliseconds % 1000) /
-                              1000,
-                        ),
-                        size: const Size(double.infinity, 150),
-                      )
+                              painter: RealtimeWaveformPainter(
+                                amplitudes: _amplitudes,
+                                color: AppTheme.teal,
+                                isPaused: _isPaused,
+                              ),
+                              size: const Size(double.infinity, 100),
+                            )
                           : Icon(
-                        Icons.mic_none_rounded,
-                        size: 64,
-                        color: AppTheme.teal.withValues(alpha: 0.3),
-                      ),
+                              Icons.mic_none_rounded,
+                              size: 64,
+                              color: AppTheme.teal.withValues(alpha: 0.3),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -279,38 +292,16 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
-                  const SizedBox(height: 8),
-
-                  // Info hint (only when idle)
-                  if (!_isRecording)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.teal.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: AppTheme.teal.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.info_outline,
-                                color: AppTheme.teal, size: 20),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'After recording, use the transcribe button to convert speech to text',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.color,
-                                ),
-                              ),
-                            ),
-                          ],
+                  
+                  if (isStereo && _isRecording)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Stereo Mode Active',
+                        style: TextStyle(
+                          color: AppTheme.teal,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -376,32 +367,46 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
 enum _ExitChoice { stopAndSave, discard, keepRecording }
 
-// ─── Animated waveform painter ────────────────────────────────────────────────
+// ─── Real-time audio waveform painter ─────────────────────────────────────────
 
-class AnimatedWaveformPainter extends CustomPainter {
+class RealtimeWaveformPainter extends CustomPainter {
+  final List<double> amplitudes;
   final Color color;
-  final double animationValue;
+  final bool isPaused;
 
-  AnimatedWaveformPainter({required this.color, required this.animationValue});
+  RealtimeWaveformPainter({
+    required this.amplitudes,
+    required this.color,
+    required this.isPaused,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (amplitudes.isEmpty) return;
+
     final paint = Paint()
-      ..color = color
+      ..color = isPaused ? Colors.grey : color
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
     final centerY = size.height / 2;
-    const barWidth = 8.0;
-    const spacing = 12.0;
-    const barCount = 5;
-    const totalWidth = barCount * (barWidth + spacing);
-    final startX = (size.width - totalWidth) / 2;
+    const spacing = 6.0;
+    const barWidth = 3.0;
+    
+    final maxBars = (size.width / (barWidth + spacing)).floor();
+    final barsToShow = amplitudes.length > maxBars 
+        ? amplitudes.sublist(amplitudes.length - maxBars) 
+        : amplitudes;
 
-    for (int i = 0; i < barCount; i++) {
-      final x = startX + (i * (barWidth + spacing)) + barWidth / 2;
-      final height =
-          20 + (40 * (0.5 + 0.5 * Math.sin(animationValue * 6.28 + i)));
+    for (int i = 0; i < barsToShow.length; i++) {
+      final x = i * (barWidth + spacing);
+      
+      // Map dB (-60 to 0) to 0.05 to 1.0 range
+      double normalized = (barsToShow[i] + 60) / 60;
+      normalized = normalized.clamp(0.05, 1.0);
+      
+      final height = normalized * size.height;
+      
       canvas.drawLine(
         Offset(x, centerY - height / 2),
         Offset(x, centerY + height / 2),
@@ -411,6 +416,5 @@ class AnimatedWaveformPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(AnimatedWaveformPainter old) =>
-      old.animationValue != animationValue;
+  bool shouldRepaint(RealtimeWaveformPainter old) => true;
 }

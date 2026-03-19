@@ -43,6 +43,11 @@ class RecordingSettings extends HiveObject {
   @HiveField(10)
   bool autoDownloadAudio;
 
+  // HiveField(11) — added in v1.5.0.
+  // Enables stereo recording (2 channels) if the device supports it.
+  @HiveField(11)
+  bool stereoRecording;
+
   RecordingSettings({
     this.autoGainControl = true,
     this.noiseSuppression = true,
@@ -55,6 +60,7 @@ class RecordingSettings extends HiveObject {
     this.themeMode = "System",
     this.enableBeeps = true,
     this.autoDownloadAudio = false,
+    this.stereoRecording = false,
   });
 
   RecordingSettings copyWith({
@@ -69,6 +75,7 @@ class RecordingSettings extends HiveObject {
     String? themeMode,
     bool? enableBeeps,
     bool? autoDownloadAudio,
+    bool? stereoRecording,
   }) {
     return RecordingSettings(
       autoGainControl: autoGainControl ?? this.autoGainControl,
@@ -82,6 +89,7 @@ class RecordingSettings extends HiveObject {
       themeMode: themeMode ?? this.themeMode,
       enableBeeps: enableBeeps ?? this.enableBeeps,
       autoDownloadAudio: autoDownloadAudio ?? this.autoDownloadAudio,
+      stereoRecording: stereoRecording ?? this.stereoRecording,
     );
   }
 }

@@ -1,7 +1,9 @@
 // lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:vocal_memo/providers/selection_provider.dart';
 import 'package:vocal_memo/widgets/search_filters_modal.dart';
+import 'package:vocal_memo/widgets/selection_bar.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../models/recording.dart';
@@ -37,7 +39,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _checkTutorial() async {
     final seen = StorageService.getHomeTutorialSeen();
     if (!seen && mounted) {
-      // Delay so the layout is fully built before we measure widget positions
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _showTutorial = true);
       });
@@ -61,6 +62,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final recordings = ref.watch(recordingProvider);
+    final selectedIds = ref.watch(selectionProvider);
+    final selectionModeActive = selectedIds.isNotEmpty;
 
     List<Recording> filtered = recordings;
 
@@ -86,7 +89,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Apply advanced filters
     if (_searchFilters.hasActiveFilters) {
       filtered = filtered.where((r) {
-        // Duration filter
         if (_searchFilters.minDuration != null &&
             r.duration < _searchFilters.minDuration!) {
           return false;
@@ -96,7 +98,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           return false;
         }
 
-        // Date filter
         if (_searchFilters.fromDate != null) {
           final fromDate = DateTime(
             _searchFilters.fromDate!.year,
@@ -125,125 +126,145 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }).toList();
     }
 
-    return Stack(
-      children: [
-        Scaffold(
-          appBar: AppBar(
-            title: Row(
-              children: [
-                Image.asset('assets/images/small_logo.png', width: 24,),
-                const SizedBox(width: 15,),
-                const Text('Vocal Memo', style: TextStyle(fontSize: 22),)
+    return PopScope(
+      canPop: !selectionModeActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && selectionModeActive) {
+          ref.read(selectionProvider.notifier).clear();
+        }
+      },
+      child: Stack(
+        children: [
+          Scaffold(
+            appBar: AppBar(
+              title: selectionModeActive
+                  ? Text('${selectedIds.length} selected')
+                  : Row(
+                      children: [
+                        Image.asset('assets/images/small_logo.png', width: 24,),
+                        const SizedBox(width: 15,),
+                        const Text('Vocal Memo', style: TextStyle(fontSize: 22),)
+                      ],
+                    ),
+              elevation: 0,
+              leading: selectionModeActive
+                  ? IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => ref.read(selectionProvider.notifier).clear(),
+                    )
+                  : null,
+              actions: [
+                if (!selectionModeActive)
+                  IconButton(
+                    icon: const Icon(Icons.settings),
+                    onPressed: () => Navigator.pushNamed(context, '/settings'),
+                  ),
+                const SizedBox(width: 16,)
               ],
             ),
-            elevation: 0,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.settings),
-                onPressed: () => Navigator.pushNamed(context, '/settings'),
-              ),
-              SizedBox(width: 16,)
-            ],
-          ),
-          body: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
-                child: SearchBar(
-                  onChanged: (value) => setState(() => _searchQuery = value),
-                  hintText: 'Search memos...',
-                  onFilterTap: () async {
-                    final result = await showModalBottomSheet<SearchFilters>(
-                      context: context,
-                      isScrollControlled: true,
-                      builder: (context) => SearchFiltersModal(
-                        initialFilters: _searchFilters,
-                      ),
-                    );
-                    if (result != null) {
-                      setState(() => _searchFilters = result);
-                    }
-                  },
-                  hasActiveFilters: _searchFilters.hasActiveFilters,
-                ),
-              ),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: _filters.map((filter) {
-                    final isSelected = filter == _selectedFilter;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text(filter),
-                        selected: isSelected,
-                        onSelected: (_) =>
-                            setState(() => _selectedFilter = filter),
-                        backgroundColor: Colors.white,
-                        selectedColor: AppTheme.teal,
-                        labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : AppTheme.darkText,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        side: BorderSide(
-                          color: isSelected ? AppTheme.teal : AppTheme.mediumGray,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: filtered.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                  onRefresh: () =>
-                      ref.read(recordingProvider.notifier).refreshRecordings(),
-                  color: AppTheme.teal,
-                  child: ListView.builder(
-                    itemCount: filtered.length,
-                    padding: const EdgeInsets.all(16),
-                    itemBuilder: (context, index) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      // Attach key to the first card for tutorial spotlighting
-                      child: index == 0
-                          ? KeyedSubtree(
-                        key: _firstCardKey,
-                        child: ExpandableRecordingCard(
+            body: Column(
+              children: [
+                if (!selectionModeActive)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
+                    child: SearchBar(
+                      onChanged: (value) => setState(() => _searchQuery = value),
+                      hintText: 'Search memos...',
+                      onFilterTap: () async {
+                        final result = await showModalBottomSheet<SearchFilters>(
+                          context: context,
+                          isScrollControlled: true,
+                          builder: (context) => SearchFiltersModal(
+                            initialFilters: _searchFilters,
+                          ),
+                        );
+                        if (result != null) {
+                          setState(() => _searchFilters = result);
+                        }
+                      },
+                      hasActiveFilters: _searchFilters.hasActiveFilters,
+                    ),
+                  ),
+                if (!selectionModeActive)
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: _filters.map((filter) {
+                        final isSelected = filter == _selectedFilter;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            label: Text(filter),
+                            selected: isSelected,
+                            onSelected: (_) =>
+                                setState(() => _selectedFilter = filter),
+                            backgroundColor: Colors.white,
+                            selectedColor: AppTheme.teal,
+                            labelStyle: TextStyle(
+                              color: isSelected ? Colors.white : AppTheme.darkText,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            side: BorderSide(
+                              color: isSelected ? AppTheme.teal : AppTheme.mediumGray,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? _buildEmptyState()
+                      : RefreshIndicator(
+                    onRefresh: () =>
+                        ref.read(recordingProvider.notifier).refreshRecordings(),
+                    color: AppTheme.teal,
+                    child: ListView.builder(
+                      itemCount: filtered.length,
+                      padding: const EdgeInsets.all(16),
+                      itemBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: index == 0
+                            ? KeyedSubtree(
+                          key: _firstCardKey,
+                          child: ExpandableRecordingCard(
+                            recording: filtered[index],
+                          ),
+                        )
+                            : ExpandableRecordingCard(
                           recording: filtered[index],
                         ),
-                      )
-                          : ExpandableRecordingCard(
-                        recording: filtered[index],
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          floatingActionButton: FloatingActionButton(
-            key: _fabKey,
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const LiveRecordingScreen()),
+              ],
             ),
-            child: const Icon(Icons.mic_rounded),
+            floatingActionButton: selectionModeActive
+                ? null
+                : FloatingActionButton(
+                    key: _fabKey,
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LiveRecordingScreen()),
+                    ),
+                    child: const Icon(Icons.mic_rounded),
+                  ),
+            bottomNavigationBar: const SelectionBar(),
           ),
-        ),
 
-        // Tutorial spotlight overlay
-        if (_showTutorial)
-          _TutorialOverlay(
-            step: _tutorialStep,
-            targetKey: _tutorialStep == 0 ? _fabKey : _firstCardKey,
-            onNext: _advanceTutorial,
-            onDismiss: _dismissTutorial,
-            hasRecordings: recordings.isNotEmpty,
-          ),
-      ],
+          if (_showTutorial && !selectionModeActive)
+            _TutorialOverlay(
+              step: _tutorialStep,
+              targetKey: _tutorialStep == 0 ? _fabKey : _firstCardKey,
+              onNext: _advanceTutorial,
+              onDismiss: _dismissTutorial,
+              hasRecordings: recordings.isNotEmpty,
+            ),
+        ],
+      ),
     );
   }
 
@@ -345,7 +366,7 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
       title: 'Start recording',
       description:
       'Tap the mic button to begin capturing a new voice memo.',
-      tooltipBelow: false, // tooltip appears above the FAB
+      tooltipBelow: false,
     ),
     _TutorialStepData(
       title: 'Expand a recording',
@@ -366,7 +387,6 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
       behavior: HitTestBehavior.opaque,
       child: Stack(
         children: [
-          // Dimmed backdrop with a transparent hole over the target
           if (rect != null)
             CustomPaint(
               size: MediaQuery.of(context).size,
@@ -375,7 +395,6 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
           else
             Container(color: Colors.black54),
 
-          // Pulsing ring around the target
           if (rect != null)
             Positioned(
               left: rect.left,
@@ -401,7 +420,6 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
               ),
             ),
 
-          // Tooltip card
           if (rect != null)
             _buildTooltip(context, rect, stepData, totalSteps),
         ],
@@ -420,11 +438,9 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    // Centre the tooltip horizontally, clamped to screen edges
     double left = (screenWidth - cardWidth) / 2;
     left = left.clamp(padding, screenWidth - cardWidth - padding);
 
-    // Place above or below the spotlight
     final double top;
     if (stepData.tooltipBelow) {
       top = (targetRect.bottom + 16).clamp(padding, screenHeight - 180);
@@ -437,7 +453,7 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
       top: top,
       width: cardWidth,
       child: GestureDetector(
-        onTap: () {}, // absorb taps so they don't dismiss
+        onTap: () {},
         child: Material(
           color: Colors.transparent,
           child: Container(
@@ -457,7 +473,6 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Step counter
                 Row(
                   children: [
                     Container(
@@ -486,7 +501,6 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
                 ),
                 const SizedBox(height: 10),
 
-                // Title
                 Text(
                   stepData.title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -495,7 +509,6 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
                 ),
                 const SizedBox(height: 6),
 
-                // Description
                 Text(
                   stepData.description,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -505,7 +518,6 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
                 ),
                 const SizedBox(height: 14),
 
-                // Action buttons
                 Row(
                   children: [
                     if (widget.step < totalSteps - 1)
@@ -566,7 +578,6 @@ class _TutorialStepData {
   });
 }
 
-/// Paints a semi-transparent overlay with a rounded-rect cutout over [targetRect].
 class _SpotlightPainter extends CustomPainter {
   final Rect targetRect;
 
@@ -574,10 +585,8 @@ class _SpotlightPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Define the full screen area
     final fullRect = Offset.zero & size;
 
-    // 2. Define the spotlight area (inflated slightly for breathing room)
     final spotlightPath = Path()
       ..addRRect(
         RRect.fromRectAndRadius(
@@ -586,14 +595,12 @@ class _SpotlightPainter extends CustomPainter {
         ),
       );
 
-    // 3. Create a path for the background that EXCLUDES the spotlight
     final backgroundPath = Path.combine(
       PathOperation.difference,
       Path()..addRect(fullRect),
       spotlightPath,
     );
 
-    // 4. Paint only the background path
     final paint = Paint()..color = Colors.black.withValues(alpha: 0.6);
     canvas.drawPath(backgroundPath, paint);
   }

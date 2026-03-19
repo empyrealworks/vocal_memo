@@ -2,7 +2,7 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'package:vocal_memo/services/encryption%20_service.dart';
+import 'package:vocal_memo/services/encryption_service.dart';
 import '../models/recording.dart';
 import '../models/recording_settings.dart';
 import 'auth_service.dart';
