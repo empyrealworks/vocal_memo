@@ -1,11 +1,12 @@
 // lib/screens/live_recording_screen.dart
 import 'dart:async';
-import 'dart:math' as Math;
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:record/record.dart';
 import 'package:vocal_memo/models/recording_settings.dart';
 import '../providers/settings_provider.dart';
+import '../services/recording_notification_service.dart';
 import '../theme/app_theme.dart';
 import '../providers/recording_provider.dart';
 
@@ -17,12 +18,14 @@ class LiveRecordingScreen extends ConsumerStatefulWidget {
       _LiveRecordingScreenState();
 }
 
-class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
+class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen>
+    with WidgetsBindingObserver {
   late Stopwatch _stopwatch;
-  bool _isRecording = false;
-  bool _isPaused = false;
+  bool _isRecording    = false;
+  bool _isPaused       = false;
+  bool _isSaving       = false; // true while we're writing + uploading
   Duration _recordingTime = Duration.zero;
-  
+
   StreamSubscription<Amplitude>? _amplitudeSub;
   final List<double> _amplitudes = [];
   static const int _maxAmplitudes = 60;
@@ -31,16 +34,65 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   void initState() {
     super.initState();
     _stopwatch = Stopwatch();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Register the callback that receives messages from the task isolate.
+    // Must mirror removeTaskDataCallback in dispose().
+    FlutterForegroundTask.addTaskDataCallback(_onTaskData);
+
+    // Request notification permission early so the dialog never appears
+    // while the microphone is already open.
+    RecordingNotificationService.requestPermissions();
   }
 
   @override
   void dispose() {
+    FlutterForegroundTask.removeTaskDataCallback(_onTaskData);
+    WidgetsBinding.instance.removeObserver(this);
     _stopwatch.stop();
     _amplitudeSub?.cancel();
     super.dispose();
   }
 
-  // ─── Guard ────────────────────────────────────────────────────
+  // ─── Lifecycle observer ───────────────────────────────────────
+  // Refresh displayed time when the user returns from the background so
+  // the UI immediately shows the up-to-date elapsed time.
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isRecording && !_isPaused) {
+      setState(() => _recordingTime = _stopwatch.elapsed);
+    }
+  }
+
+  // ─── Task-data callback (messages from notification buttons) ──
+
+  void _onTaskData(Object data) {
+    if (data is! Map) return;
+    final type = (data as Map)['type'] as String?;
+
+    switch (type) {
+      case 'notif_pause_pressed':
+      // Notification Pause button → pause the mic and sync UI.
+        if (_isRecording && !_isPaused && !_isSaving) {
+          _pauseRecordingInternal(notifyTask: false);
+        }
+
+      case 'notif_resume_pressed':
+      // Notification Resume button → resume the mic and sync UI.
+        if (_isRecording && _isPaused && !_isSaving) {
+          _resumeRecordingInternal(notifyTask: false);
+        }
+
+      case 'notif_stop_pressed':
+      // Notification "Stop & Save" button → save recording.
+        if (_isRecording && !_isSaving) {
+          _stopRecording();
+        }
+    }
+  }
+
+  // ─── Exit guard ───────────────────────────────────────────────
 
   Future<bool> _onWillPop() async {
     if (!_isRecording) return true;
@@ -129,90 +181,121 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     );
 
     if (result == null || result == _ExitChoice.keepRecording) return false;
-
     if (result == _ExitChoice.stopAndSave) {
       await _stopRecording();
       return false;
     }
-
     await _discardRecording();
     return false;
   }
 
-  // ─── Recording lifecycle ─────────────────────────────────────
+  // ─── Recording lifecycle ──────────────────────────────────────
 
-  void _startRecording(RecordingSettings settings) async {
+  Future<void> _startRecording(RecordingSettings settings) async {
+    // Start the foreground service FIRST — on Android this is what keeps
+    // the process alive (and the mic open) when the app is backgrounded.
+    await RecordingNotificationService.start();
+
     await ref.read(recordingProvider.notifier).startRecording(settings);
-    
-    _amplitudeSub = ref.read(audioServiceProvider).onAmplitudeChanged.listen((amp) {
-      if (mounted) {
-        setState(() {
-          _amplitudes.add(amp.current);
-          if (_amplitudes.length > _maxAmplitudes) {
-            _amplitudes.removeAt(0);
+
+    _amplitudeSub =
+        ref.read(audioServiceProvider).onAmplitudeChanged.listen((amp) {
+          if (mounted) {
+            setState(() {
+              _amplitudes.add(amp.current);
+              if (_amplitudes.length > _maxAmplitudes) _amplitudes.removeAt(0);
+            });
           }
         });
-      }
-    });
 
     _stopwatch.start();
-    setState(() {
-      _isRecording = true;
-      _isPaused = false;
-    });
-    Future.delayed(const Duration(milliseconds: 100), _updateTime);
-  }
-
-  void _updateTime() {
-    if (_isRecording && !_isPaused) {
-      setState(() => _recordingTime = _stopwatch.elapsed);
-      Future.delayed(const Duration(milliseconds: 100), _updateTime);
+    if (mounted) {
+      setState(() {
+        _isRecording = true;
+        _isPaused    = false;
+      });
     }
+    _tickTimer();
   }
 
-  Future<void> _pauseRecording() async {
+  void _tickTimer() {
+    if (!_isRecording || _isPaused) return;
+    if (mounted) setState(() => _recordingTime = _stopwatch.elapsed);
+    Future.delayed(const Duration(milliseconds: 100), _tickTimer);
+  }
+
+  // ── Pause / resume (internal — avoids double-notifying the task) ─
+
+  void _pauseRecordingInternal({required bool notifyTask}) async {
     await ref.read(recordingProvider.notifier).pauseRecording();
     _stopwatch.stop();
     _amplitudeSub?.pause();
-    setState(() => _isPaused = true);
+    if (notifyTask) RecordingNotificationService.notifyPaused();
+    if (mounted) setState(() => _isPaused = true);
   }
 
-  Future<void> _resumeRecording() async {
+  void _resumeRecordingInternal({required bool notifyTask}) async {
     await ref.read(recordingProvider.notifier).resumeRecording();
     _stopwatch.start();
     _amplitudeSub?.resume();
-    setState(() => _isPaused = false);
-    _updateTime();
+    if (notifyTask) RecordingNotificationService.notifyResumed();
+    if (mounted) setState(() => _isPaused = false);
+    _tickTimer();
   }
 
+  // ── Public-facing pause / resume (from UI buttons) ────────────
+
+  Future<void> _pauseRecording()  async => _pauseRecordingInternal(notifyTask: true);
+  Future<void> _resumeRecording() async => _resumeRecordingInternal(notifyTask: true);
+
+  // ── Stop (save) ───────────────────────────────────────────────
+
   Future<void> _stopRecording() async {
+    if (_isSaving) return; // guard against double-tap / double-call
+    if (mounted) setState(() => _isSaving = true);
+
     _stopwatch.stop();
     _amplitudeSub?.cancel();
-    setState(() {
-      _isRecording = false;
-      _isPaused = false;
-    });
+
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _isPaused    = false;
+      });
+    }
+
+    // Save the recording (AudioService writes + extracts waveform, then Hive).
     await ref.read(recordingProvider.notifier).stopRecording();
+
+    // Update the notification to "Saved ✓" for 2 s then dismiss it.
+    await RecordingNotificationService.showSavedThenStop();
+
     if (mounted) Navigator.pop(context);
   }
+
+  // ── Discard ───────────────────────────────────────────────────
 
   Future<void> _discardRecording() async {
     _stopwatch.stop();
     _amplitudeSub?.cancel();
-    setState(() {
-      _isRecording = false;
-      _isPaused = false;
-    });
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _isPaused    = false;
+      });
+    }
     await ref.read(recordingProvider.notifier).discardRecording();
+    await RecordingNotificationService.stopImmediately();
     if (mounted) Navigator.pop(context);
   }
 
-  // ─── Build ───────────────────────────────────────────────────
+  // ─── Build ────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
-    final bool isStereo = settings.stereoRecording && settings.device == "Default Microphone";
+    final bool isStereo =
+        settings.stereoRecording && settings.device == 'Default Microphone';
 
     return PopScope(
       canPop: false,
@@ -230,128 +313,181 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
               if (canLeave && mounted) Navigator.of(context).pop();
             },
           ),
-          title: _isRecording
+          title: _isSaving
+              ? const Text('Saving…')
+              : (_isRecording
               ? const Text('Recording...')
-              : const Text('New Recording'),
+              : const Text('New Recording')),
         ),
-        body: Column(
+        body: Stack(
           children: [
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Waveform animation
-                  Container(
-                    width: double.infinity,
-                    height: 160,
-                    margin: const EdgeInsets.symmetric(horizontal: 24),
-                    decoration: BoxDecoration(
-                      color: AppTheme.teal.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: _isRecording
-                          ? CustomPaint(
-                              painter: RealtimeWaveformPainter(
-                                amplitudes: _amplitudes,
-                                color: AppTheme.teal,
-                                isPaused: _isPaused,
-                              ),
-                              size: const Size(double.infinity, 100),
-                            )
-                          : Icon(
-                              Icons.mic_none_rounded,
-                              size: 64,
-                              color: AppTheme.teal.withValues(alpha: 0.3),
+            Column(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // ── Waveform ────────────────────────────────────
+                      Container(
+                        width: double.infinity,
+                        height: 160,
+                        margin:
+                        const EdgeInsets.symmetric(horizontal: 24),
+                        decoration: BoxDecoration(
+                          color: AppTheme.teal.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: _isRecording
+                              ? CustomPaint(
+                            painter: RealtimeWaveformPainter(
+                              amplitudes: _amplitudes,
+                              color: AppTheme.teal,
+                              isPaused: _isPaused,
                             ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Time display
-                  Text(
-                    _formatDuration(_recordingTime),
-                    style:
-                    Theme.of(context).textTheme.displayMedium?.copyWith(
-                      color: AppTheme.orange,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Status text
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Text(
-                      _isRecording
-                          ? (_isPaused
-                          ? 'Recording paused'
-                          : 'Recording in progress...')
-                          : 'Tap the button below to start recording',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                  
-                  if (isStereo && _isRecording)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Stereo Mode Active',
-                        style: TextStyle(
-                          color: AppTheme.teal,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                            size: const Size(double.infinity, 100),
+                          )
+                              : Icon(
+                            Icons.mic_none_rounded,
+                            size: 64,
+                            color:
+                            AppTheme.teal.withValues(alpha: 0.3),
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            ),
+                      const SizedBox(height: 24),
 
-            // Controls
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  if (_isRecording)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        FloatingActionButton(
-                          heroTag: 'pause_resume',
-                          mini: true,
-                          backgroundColor: AppTheme.lightGray,
-                          foregroundColor: AppTheme.orange,
-                          onPressed: _isPaused
-                              ? _resumeRecording
-                              : _pauseRecording,
-                          child: Icon(_isPaused
-                              ? Icons.play_arrow_rounded
-                              : Icons.pause_rounded),
+                      // ── Elapsed time ─────────────────────────────────
+                      Text(
+                        _formatDuration(_recordingTime),
+                        style: Theme.of(context)
+                            .textTheme
+                            .displayMedium
+                            ?.copyWith(
+                          color: AppTheme.orange,
+                          fontWeight: FontWeight.bold,
                         ),
-                        FloatingActionButton(
-                          heroTag: 'stop',
-                          backgroundColor: AppTheme.orange,
-                          onPressed: _stopRecording,
-                          child: const Icon(Icons.stop_rounded),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // ── Status text ──────────────────────────────────
+                      Padding(
+                        padding:
+                        const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          _isSaving
+                              ? 'Saving your recording…'
+                              : (_isRecording
+                              ? (_isPaused
+                              ? 'Recording paused'
+                              : 'Recording in progress...')
+                              : 'Tap the button below to start recording'),
+                          textAlign: TextAlign.center,
+                          style:
+                          Theme.of(context).textTheme.bodyMedium,
                         ),
-                      ],
-                    )
-                  else
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: FloatingActionButton.extended(
-                        heroTag: 'start',
-                        onPressed: () => _startRecording(settings),
+                      ),
+
+                      if (isStereo && _isRecording)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Stereo Mode Active',
+                            style: TextStyle(
+                              color: AppTheme.teal,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+
+                      // ── Background hint ──────────────────────────────
+                      if (_isRecording && !_isSaving)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                              top: 16, left: 24, right: 24),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.notifications_active_outlined,
+                                size: 14,
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withValues(alpha: 0.55),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Recording continues in the background',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                  fontSize: 11,
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.color
+                                      ?.withValues(alpha: 0.55),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
+                // ── Controls ──────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: _isSaving
+                      ? const Center(
+                    child: CircularProgressIndicator(
+                      color: AppTheme.teal,
+                    ),
+                  )
+                      : _isRecording
+                      ? Row(
+                    mainAxisAlignment:
+                    MainAxisAlignment.spaceEvenly,
+                    children: [
+                      FloatingActionButton(
+                        heroTag: 'pause_resume',
+                        mini: true,
+                        backgroundColor: AppTheme.lightGray,
+                        foregroundColor: AppTheme.orange,
+                        onPressed: _isPaused
+                            ? _resumeRecording
+                            : _pauseRecording,
+                        child: Icon(_isPaused
+                            ? Icons.play_arrow_rounded
+                            : Icons.pause_rounded),
+                      ),
+                      FloatingActionButton(
+                        heroTag: 'stop',
                         backgroundColor: AppTheme.orange,
-                        icon: const Icon(Icons.mic_rounded),
-                        label: const Text('Start Recording'),
+                        onPressed: _stopRecording,
+                        child: const Icon(Icons.stop_rounded),
                       ),
+                    ],
+                  )
+                      : SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FloatingActionButton.extended(
+                      heroTag: 'start',
+                      onPressed: () =>
+                          _startRecording(settings),
+                      backgroundColor: AppTheme.orange,
+                      icon: const Icon(Icons.mic_rounded),
+                      label: const Text('Start Recording'),
                     ),
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -360,21 +496,23 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    return '${twoDigits(duration.inHours)}:${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}';
+    String dd(int n) => n.toString().padLeft(2, '0');
+    return '${dd(duration.inHours)}:'
+        '${dd(duration.inMinutes.remainder(60))}:'
+        '${dd(duration.inSeconds.remainder(60))}';
   }
 }
 
 enum _ExitChoice { stopAndSave, discard, keepRecording }
 
-// ─── Real-time audio waveform painter ─────────────────────────────────────────
+// ─── Waveform painter ─────────────────────────────────────────────────────────
 
 class RealtimeWaveformPainter extends CustomPainter {
   final List<double> amplitudes;
   final Color color;
   final bool isPaused;
 
-  RealtimeWaveformPainter({
+  const RealtimeWaveformPainter({
     required this.amplitudes,
     required this.color,
     required this.isPaused,
@@ -392,24 +530,18 @@ class RealtimeWaveformPainter extends CustomPainter {
     final centerY = size.height / 2;
     const spacing = 6.0;
     const barWidth = 3.0;
-    
     final maxBars = (size.width / (barWidth + spacing)).floor();
-    final barsToShow = amplitudes.length > maxBars 
-        ? amplitudes.sublist(amplitudes.length - maxBars) 
+    final bars = amplitudes.length > maxBars
+        ? amplitudes.sublist(amplitudes.length - maxBars)
         : amplitudes;
 
-    for (int i = 0; i < barsToShow.length; i++) {
+    for (int i = 0; i < bars.length; i++) {
       final x = i * (barWidth + spacing);
-      
-      // Map dB (-60 to 0) to 0.05 to 1.0 range
-      double normalized = (barsToShow[i] + 60) / 60;
-      normalized = normalized.clamp(0.05, 1.0);
-      
-      final height = normalized * size.height;
-      
+      final normalized = ((bars[i] + 60) / 60).clamp(0.05, 1.0);
+      final h = normalized * size.height;
       canvas.drawLine(
-        Offset(x, centerY - height / 2),
-        Offset(x, centerY + height / 2),
+        Offset(x, centerY - h / 2),
+        Offset(x, centerY + h / 2),
         paint,
       );
     }

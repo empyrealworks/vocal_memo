@@ -2,6 +2,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vocal_memo/providers/auth_provider.dart';
 import 'package:vocal_memo/providers/connectivity_provider.dart';
@@ -20,6 +21,11 @@ import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialises the port used for two-way communication between the
+  // foreground-task isolate and the main (UI) isolate. Must be called before
+  // runApp so the port is ready when the first task message arrives.
+  FlutterForegroundTask.initCommunicationPort();
 
   // Initialize Firebase
   await Firebase.initializeApp(
@@ -68,7 +74,7 @@ class _VocalMemoState extends ConsumerState<VocalMemo> {
   Future<void> _syncDataToCloud() async {
     try {
       final recordings = ref.read(recordingProvider);
-      final settings = ref.read(settingsProvider);
+      final settings   = ref.read(settingsProvider);
       final syncService = ref.read(cloudSyncServiceProvider);
 
       await syncService.syncAllToCloud(
@@ -102,8 +108,7 @@ class _VocalMemoState extends ConsumerState<VocalMemo> {
           ),
           backgroundColor: AppTheme.teal,
           behavior: SnackBarBehavior.floating,
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           duration: const Duration(seconds: 4),
         ),
       );
@@ -112,7 +117,6 @@ class _VocalMemoState extends ConsumerState<VocalMemo> {
 
   @override
   Widget build(BuildContext context) {
-    // 1. Auth sync listener stays here (it doesn't need a ScaffoldMessenger context)
     ref.listen(authStateProvider, (previous, next) {
       next.whenData((user) {
         if (user != null && previous?.value == null) {
@@ -130,21 +134,19 @@ class _VocalMemoState extends ConsumerState<VocalMemo> {
       darkTheme: AppTheme.darkTheme,
       themeMode: _toThemeMode(settings.themeMode),
 
-      // ── Inject connectivity banner + drain trigger globally ───
       builder: (context, child) {
-        // 2. Wrap in a Consumer to get a valid build context for ref.listen
         return Consumer(
           builder: (consumerContext, consumerRef, _) {
-
-            // Now safely inside a Consumer's build method!
-            consumerRef.listen<AsyncValue<bool>>(connectivityStreamProvider, (prev, next) {
-              next.whenData((online) {
-                if (online && prev?.value == false) {
-                  // Use the consumerContext, which is safely below MaterialApp
-                  _drainSyncQueue(consumerContext);
-                }
-              });
-            });
+            consumerRef.listen<AsyncValue<bool>>(
+              connectivityStreamProvider,
+                  (prev, next) {
+                next.whenData((online) {
+                  if (online && prev?.value == false) {
+                    _drainSyncQueue(consumerContext);
+                  }
+                });
+              },
+            );
 
             return ConnectivityIcon(child: child ?? const SizedBox.shrink());
           },
