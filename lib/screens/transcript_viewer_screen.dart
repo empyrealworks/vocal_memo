@@ -10,14 +10,6 @@ import '../theme/app_theme.dart';
 import '../models/recording.dart';
 import '../providers/recording_provider.dart';
 
-/// Full-screen transcript viewer and editor
-///
-/// Features:
-/// - View full transcript
-/// - Edit transcript
-/// - Copy to clipboard
-/// - Save to text file
-/// - Share transcript
 class TranscriptViewerScreen extends ConsumerStatefulWidget {
   final Recording recording;
 
@@ -57,9 +49,10 @@ class _TranscriptViewerScreenState
     }
   }
 
+  // ── Save edits ────────────────────────────────────────────────
+
   Future<void> _saveChanges() async {
     final newTranscript = _textController.text.trim();
-
     if (newTranscript.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -71,19 +64,14 @@ class _TranscriptViewerScreenState
     }
 
     try {
-      // Encrypt the new transcript
-      final encryptedTranscript = EncryptionService.encrypt(newTranscript);
-      await ref
-          .read(recordingProvider.notifier)
-          .updateRecording(
-            widget.recording.copyWith(transcript: encryptedTranscript),
-          );
-
+      final encrypted = EncryptionService.encrypt(newTranscript);
+      await ref.read(recordingProvider.notifier).updateRecording(
+        widget.recording.copyWith(transcript: encrypted),
+      );
       setState(() {
         _hasChanges = false;
         _isEditing = false;
       });
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -95,17 +83,15 @@ class _TranscriptViewerScreenState
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to save: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Failed to save: $e'), backgroundColor: Colors.red),
       );
     }
   }
 
+  // ── Clipboard / file / share ──────────────────────────────────
+
   Future<void> _copyToClipboard() async {
     await Clipboard.setData(ClipboardData(text: _textController.text));
-
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -120,16 +106,13 @@ class _TranscriptViewerScreenState
     try {
       final directory = await getApplicationDocumentsDirectory();
       final transcriptsDir = Directory('${directory.path}/transcripts');
-
       if (!await transcriptsDir.exists()) {
         await transcriptsDir.create(recursive: true);
       }
-
-      final fileName = '${widget.recording.displayTitle}_transcript.txt';
+      final fileName =
+          '${widget.recording.displayTitle}_transcript.txt';
       final file = File('${transcriptsDir.path}/$fileName');
-
       await file.writeAsString(_textController.text);
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -167,13 +150,15 @@ class _TranscriptViewerScreenState
     }
   }
 
+  // ── Delete transcript (NOT the recording) ─────────────────────
+
   Future<void> _deleteTranscript() async {
     try {
-      await ref
-          .read(recordingProvider.notifier)
-          .updateRecording(widget.recording.copyWith(transcript: null));
-
+      await ref.read(recordingProvider.notifier).updateRecording(
+        widget.recording.copyWith(transcript: null),
+      );
       if (mounted) {
+        // Show the confirmation snackbar on the screen below before popping.
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Transcript deleted'),
@@ -184,97 +169,94 @@ class _TranscriptViewerScreenState
         Navigator.pop(context);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete transcript: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete transcript: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
+  // ── Back-press guard ──────────────────────────────────────────
+
   Future<bool> _onWillPop() async {
-    if (_hasChanges) {
-      final shouldDiscard = await showDialog<bool>(
-        context: context,
-        builder: (context) => Dialog(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Icon
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: AppTheme.orange.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.warning,
-                    size: 32,
-                    color: AppTheme.orange,
-                  ),
+    if (!_hasChanges) return true;
+    final shouldDiscard = await showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppTheme.orange.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 16),
-                // Title
-                Text(
-                  'Unsaved Changes',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                // Message
-                Text(
-                  'Do you want to discard your changes?',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                // Action buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          side: const BorderSide(color: AppTheme.mediumGray),
-                        ),
-                        child: const Text('Cancel'),
+                child: const Icon(Icons.warning, size: 32, color: AppTheme.orange),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Unsaved Changes',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Do you want to discard your changes?',
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: const BorderSide(color: AppTheme.mediumGray),
                       ),
+                      child: const Text('Cancel'),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.orange,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: const Text(
-                          'Discard',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.orange,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text(
+                        'Discard',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ],
-            ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-      );
-      return shouldDiscard ?? false;
-    }
-    return true;
+      ),
+    );
+    return shouldDiscard ?? false;
   }
+
+  // ── Build ─────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -307,58 +289,46 @@ class _TranscriptViewerScreenState
                 switch (value) {
                   case 'copy':
                     _copyToClipboard();
-                    break;
                   case 'save_file':
                     _saveToFile();
-                    break;
                   case 'share':
                     _shareTranscript();
-                    break;
                   case 'delete':
-                    _deleteTranscriptDialog();
-                    break;
+                    _showDeleteTranscriptDialog();
                 }
               },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
+              itemBuilder: (context) => const [
+                PopupMenuItem(
                   value: 'copy',
-                  child: Row(
-                    children: [
-                      Icon(Icons.copy, size: 20),
-                      SizedBox(width: 12),
-                      Text('Copy to Clipboard'),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Icon(Icons.copy, size: 20),
+                    SizedBox(width: 12),
+                    Text('Copy to Clipboard'),
+                  ]),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'save_file',
-                  child: Row(
-                    children: [
-                      Icon(Icons.save_alt, size: 20),
-                      SizedBox(width: 12),
-                      Text('Save as File'),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Icon(Icons.save_alt, size: 20),
+                    SizedBox(width: 12),
+                    Text('Save as File'),
+                  ]),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'share',
-                  child: Row(
-                    children: [
-                      Icon(Icons.share, size: 20),
-                      SizedBox(width: 12),
-                      Text('Share'),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Icon(Icons.share, size: 20),
+                    SizedBox(width: 12),
+                    Text('Share'),
+                  ]),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete, size: 20),
-                      SizedBox(width: 12),
-                      Text('Delete'),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Icon(Icons.delete, size: 20),
+                    SizedBox(width: 12),
+                    Text('Delete'),
+                  ]),
                 ),
               ],
             ),
@@ -390,27 +360,19 @@ class _TranscriptViewerScreenState
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 14,
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                      ),
+                      Icon(Icons.access_time,
+                          size: 14,
+                          color: Theme.of(context).textTheme.bodySmall?.color),
                       const SizedBox(width: 4),
-                      Text(
-                        widget.recording.formattedTime,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                      Text(widget.recording.formattedTime,
+                          style: Theme.of(context).textTheme.bodySmall),
                       const SizedBox(width: 16),
-                      Icon(
-                        Icons.timer,
-                        size: 14,
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                      ),
+                      Icon(Icons.timer,
+                          size: 14,
+                          color: Theme.of(context).textTheme.bodySmall?.color),
                       const SizedBox(width: 4),
-                      Text(
-                        widget.recording.formattedDuration,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                      Text(widget.recording.formattedDuration,
+                          style: Theme.of(context).textTheme.bodySmall),
                       const Spacer(),
                       Text(
                         '${_textController.text.length} characters',
@@ -422,7 +384,6 @@ class _TranscriptViewerScreenState
               ),
             ),
 
-            // Transcript editor/viewer
             Expanded(child: _isEditing ? _buildEditor() : _buildViewer()),
           ],
         ),
@@ -443,7 +404,7 @@ class _TranscriptViewerScreenState
           hintText: 'Edit your transcript...',
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: AppTheme.mediumGray),
+            borderSide: const BorderSide(color: AppTheme.mediumGray),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
@@ -465,7 +426,20 @@ class _TranscriptViewerScreenState
     );
   }
 
-  Future<void> _deleteTranscriptDialog() async {
+  // ─── Delete-transcript dialog ──────────────────────────────────────────────
+  //
+  // BUG THAT WAS HERE (now fixed):
+  //   The confirm button previously called `recordingProvider.deleteRecording()`
+  //   which deleted the ENTIRE recording (audio + metadata), then called
+  //   `Navigator.pop(context)` with no return value. That meant `shouldDelete`
+  //   was null → `_deleteTranscript()` was never reached → the user was left
+  //   stranded on this screen with the recording gone.
+  //
+  // Fix: the button simply returns `true` from the dialog. All actual deletion
+  //   logic lives in `_deleteTranscript()`, which only clears the transcript
+  //   field via `copyWith(transcript: null)` and then pops the screen.
+
+  Future<void> _showDeleteTranscriptDialog() async {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => Dialog(
@@ -474,7 +448,6 @@ class _TranscriptViewerScreenState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Icon
               Container(
                 width: 64,
                 height: 64,
@@ -489,24 +462,20 @@ class _TranscriptViewerScreenState
                 ),
               ),
               const SizedBox(height: 16),
-              // Title
               Text(
                 'Delete Transcript',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
-
-              // Message
               Text(
                 'Are you sure you want to delete this transcript?',
                 style: Theme.of(context).textTheme.bodyMedium,
                 textAlign: TextAlign.center,
               ),
-
-              // Warning!!!
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -514,43 +483,30 @@ class _TranscriptViewerScreenState
                   color: AppTheme.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                child: Row(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
+                    const Icon(Icons.warning_amber_rounded,
+                        color: AppTheme.orange, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'This action cannot be undone.',
+                        style: TextStyle(
+                          fontSize: 13,
                           color: AppTheme.orange,
-                          size: 20,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'This action cannot be undone.',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.orange,
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
-              // Note
               Text(
                 'Note: You can generate a new transcript later.',
                 style: Theme.of(context).textTheme.bodyMedium,
                 textAlign: TextAlign.start,
               ),
               const SizedBox(height: 24),
-
-              // Action buttons
               Row(
                 children: [
                   Expanded(
@@ -567,12 +523,9 @@ class _TranscriptViewerScreenState
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
-                        ref
-                            .read(recordingProvider.notifier)
-                            .deleteRecording(widget.recording.id);
-                        Navigator.pop(context);
-                      },
+                      // ✅ Fixed: just return true. _deleteTranscript() handles
+                      //    the actual update (transcript: null) and navigation.
+                      onPressed: () => Navigator.pop(context, true),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.orange,
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -593,6 +546,7 @@ class _TranscriptViewerScreenState
         ),
       ),
     );
+
     if (shouldDelete == true) {
       await _deleteTranscript();
     }

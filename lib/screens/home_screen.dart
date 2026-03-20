@@ -79,7 +79,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       filtered = filtered.where((r) {
         final query = _searchQuery.toLowerCase();
         final titleMatch = r.displayTitle.toLowerCase().contains(query);
-        final transcriptMatch = _searchFilters.searchTranscripts &&
+        final transcriptMatch =
+            _searchFilters.searchTranscripts &&
             r.transcript != null &&
             r.transcript!.toLowerCase().contains(query);
         return titleMatch || transcriptMatch;
@@ -141,16 +142,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ? Text('${selectedIds.length} selected')
                   : Row(
                       children: [
-                        Image.asset('assets/images/small_logo.png', width: 24,),
-                        const SizedBox(width: 15,),
-                        const Text('Vocal Memo', style: TextStyle(fontSize: 22),)
+                        Image.asset('assets/images/small_logo.png', width: 24),
+                        const SizedBox(width: 15),
+                        const Text(
+                          'Vocal Memo',
+                          style: TextStyle(fontSize: 22),
+                        ),
                       ],
                     ),
               elevation: 0,
               leading: selectionModeActive
                   ? IconButton(
                       icon: const Icon(Icons.close),
-                      onPressed: () => ref.read(selectionProvider.notifier).clear(),
+                      onPressed: () =>
+                          ref.read(selectionProvider.notifier).clear(),
                     )
                   : null,
               actions: [
@@ -159,25 +164,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     icon: const Icon(Icons.settings),
                     onPressed: () => Navigator.pushNamed(context, '/settings'),
                   ),
-                const SizedBox(width: 16,)
+                const SizedBox(width: 16),
               ],
             ),
             body: Column(
               children: [
                 if (!selectionModeActive)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
+                    padding: const EdgeInsets.only(
+                      bottom: 16,
+                      left: 16,
+                      right: 16,
+                    ),
                     child: SearchBar(
-                      onChanged: (value) => setState(() => _searchQuery = value),
+                      onChanged: (value) =>
+                          setState(() => _searchQuery = value),
                       hintText: 'Search memos...',
                       onFilterTap: () async {
-                        final result = await showModalBottomSheet<SearchFilters>(
-                          context: context,
-                          isScrollControlled: true,
-                          builder: (context) => SearchFiltersModal(
-                            initialFilters: _searchFilters,
-                          ),
-                        );
+                        final result =
+                            await showModalBottomSheet<SearchFilters>(
+                              context: context,
+                              isScrollControlled: true,
+                              builder: (context) => SearchFiltersModal(
+                                initialFilters: _searchFilters,
+                              ),
+                            );
                         if (result != null) {
                           setState(() => _searchFilters = result);
                         }
@@ -202,11 +213,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             backgroundColor: Colors.white,
                             selectedColor: AppTheme.teal,
                             labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : AppTheme.darkText,
+                              color: isSelected
+                                  ? Colors.white
+                                  : AppTheme.darkText,
                               fontWeight: FontWeight.w600,
                             ),
                             side: BorderSide(
-                              color: isSelected ? AppTheme.teal : AppTheme.mediumGray,
+                              color: isSelected
+                                  ? AppTheme.teal
+                                  : AppTheme.mediumGray,
                             ),
                           ),
                         );
@@ -218,27 +233,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: filtered.isEmpty
                       ? _buildEmptyState()
                       : RefreshIndicator(
-                    onRefresh: () =>
-                        ref.read(recordingProvider.notifier).refreshRecordings(),
-                    color: AppTheme.teal,
-                    child: ListView.builder(
-                      itemCount: filtered.length,
-                      padding: const EdgeInsets.all(16),
-                      itemBuilder: (context, index) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: index == 0
-                            ? KeyedSubtree(
-                          key: _firstCardKey,
-                          child: ExpandableRecordingCard(
-                            recording: filtered[index],
+                          onRefresh: () => ref
+                              .read(recordingProvider.notifier)
+                              .refreshRecordings(),
+                          color: AppTheme.teal,
+                          child: ListView.builder(
+                            itemCount: filtered.length,
+                            padding: const EdgeInsets.all(16),
+                            itemBuilder: (context, index) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: index == 0
+                                  ? KeyedSubtree(
+                                      key: _firstCardKey,
+                                      child: ExpandableRecordingCard(
+                                        key: ValueKey(
+                                          filtered[index].id,
+                                        ), // ← added
+                                        recording: filtered[index],
+                                      ),
+                                    )
+                                  : ExpandableRecordingCard(
+                                      key: ValueKey(
+                                        filtered[index].id,
+                                      ), // ← added
+                                      recording: filtered[index],
+                                    ),
+                            ),
                           ),
-                        )
-                            : ExpandableRecordingCard(
-                          recording: filtered[index],
                         ),
-                      ),
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -248,7 +270,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     key: _fabKey,
                     onPressed: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const LiveRecordingScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const LiveRecordingScreen(),
+                      ),
                     ),
                     child: const Icon(Icons.mic_rounded),
                   ),
@@ -328,11 +352,9 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
-    _pulseAnimation =
-        Tween<double>(begin: 1.0, end: 1.08).animate(CurvedAnimation(
-          parent: _pulseController,
-          curve: Curves.easeInOut,
-        ));
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
     _measureTarget();
   }
 
@@ -364,14 +386,13 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
   static const _steps = [
     _TutorialStepData(
       title: 'Start recording',
-      description:
-      'Tap the mic button to begin capturing a new voice memo.',
+      description: 'Tap the mic button to begin capturing a new voice memo.',
       tooltipBelow: false,
     ),
     _TutorialStepData(
       title: 'Expand a recording',
       description:
-      'Tap any card to expand it and access trim ✂️, AI transcription 📝, cloud backup ☁️, share, and more.',
+          'Tap any card to expand it and access trim ✂️, AI transcription 📝, cloud backup ☁️, share, and more.',
       tooltipBelow: true,
     ),
   ];
@@ -409,10 +430,7 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: AppTheme.teal,
-                          width: 2.5,
-                        ),
+                        border: Border.all(color: AppTheme.teal, width: 2.5),
                       ),
                     ),
                   ),
@@ -420,19 +438,18 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
               ),
             ),
 
-          if (rect != null)
-            _buildTooltip(context, rect, stepData, totalSteps),
+          if (rect != null) _buildTooltip(context, rect, stepData, totalSteps),
         ],
       ),
     );
   }
 
   Widget _buildTooltip(
-      BuildContext context,
-      Rect targetRect,
-      _TutorialStepData stepData,
-      int totalSteps,
-      ) {
+    BuildContext context,
+    Rect targetRect,
+    _TutorialStepData stepData,
+    int totalSteps,
+  ) {
     const cardWidth = 280.0;
     const padding = 16.0;
     final screenWidth = MediaQuery.of(context).size.width;
@@ -477,7 +494,9 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: AppTheme.teal.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
@@ -494,8 +513,11 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
                     const Spacer(),
                     GestureDetector(
                       onTap: widget.onDismiss,
-                      child: Icon(Icons.close,
-                          size: 18, color: Theme.of(context).hintColor),
+                      child: Icon(
+                        Icons.close,
+                        size: 18,
+                        color: Theme.of(context).hintColor,
+                      ),
                     ),
                   ],
                 ),
@@ -543,7 +565,9 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
                         backgroundColor: AppTheme.teal,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 8),
+                          horizontal: 18,
+                          vertical: 8,
+                        ),
                         minimumSize: Size.zero,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -606,11 +630,8 @@ class _SpotlightPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SpotlightPainter old) =>
-      old.targetRect != targetRect;
+  bool shouldRepaint(_SpotlightPainter old) => old.targetRect != targetRect;
 }
-
-
 
 class SearchBar extends StatelessWidget {
   final ValueChanged<String> onChanged;

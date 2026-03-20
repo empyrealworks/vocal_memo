@@ -157,24 +157,29 @@ class _ExpandableRecordingCardState
       });
 
       _playerStateSub = _waveformController!.onPlayerStateChanged.listen((
-          state,
-          ) {
+        state,
+      ) {
         if (!mounted) return;
         setState(() => _isPlaying = state == PlayerState.playing);
       });
 
-      _completionSub = _waveformController!.onCompletion.listen((_) {
+      _completionSub = _waveformController!.onCompletion.listen((_) async {
         if (!mounted) return;
         setState(() {
           _isPlaying = false;
           _currentPositionMs = 0;
         });
+        // ✅ Reset the controller's internal position so startPlayer() works
+        //    the next time the user presses play. Without this, the controller
+        //    stays at the track end and startPlayer() is a silent no-op.
+        await _waveformController?.seekTo(0);
         if (ref.read(activeCardPlayerProvider) == widget.recording.id) {
           ref.read(activeCardPlayerProvider.notifier).state = null;
         }
       });
 
-      final bool hasCachedWaveform = widget.recording.waveformData?.isNotEmpty == true;
+      final bool hasCachedWaveform =
+          widget.recording.waveformData?.isNotEmpty == true;
 
       await _waveformController!.preparePlayer(
         path: widget.recording.filePath,
@@ -222,7 +227,9 @@ class _ExpandableRecordingCardState
       await _waveformController!.pausePlayer();
     } else {
       ref.read(activeCardPlayerProvider.notifier).state = widget.recording.id;
-      await _waveformController!.startPlayer();
+      await _waveformController!.setFinishMode(finishMode: FinishMode.pause).then((_) async {
+        await _waveformController!.startPlayer();
+      });
     }
   }
 
@@ -255,11 +262,11 @@ class _ExpandableRecordingCardState
       final downloadUrl = await ref
           .read(recordingProvider.notifier)
           .backupRecording(
-        widget.recording,
-        onProgress: (progress) {
-          if (mounted) setState(() => _backupProgress = progress);
-        },
-      );
+            widget.recording,
+            onProgress: (progress) {
+              if (mounted) setState(() => _backupProgress = progress);
+            },
+          );
 
       if (mounted) {
         if (downloadUrl != null) {
@@ -340,15 +347,13 @@ class _ExpandableRecordingCardState
       }
     } catch (e) {
       if (mounted) {
-        final message = e.toString().contains('offline') || e.toString().contains('Offline')
+        final message =
+            e.toString().contains('offline') || e.toString().contains('Offline')
             ? 'You\'re offline. Connect to download.'
             : 'Download error: $e';
         setState(() => _downloadError = e.toString());
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -517,8 +522,9 @@ class _ExpandableRecordingCardState
       }
     });
 
-    final transcriptionState =
-    ref.watch(transcriptionNotifierProvider(widget.recording.id));
+    final transcriptionState = ref.watch(
+      transcriptionNotifierProvider(widget.recording.id),
+    );
 
     final selectedIds = ref.watch(selectionProvider);
     final isSelected = selectedIds.contains(widget.recording.id);
@@ -554,7 +560,9 @@ class _ExpandableRecordingCardState
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: (isSelected || _isExpanded) ? 0.1 : 0.05),
+              color: Colors.black.withValues(
+                alpha: (isSelected || _isExpanded) ? 0.1 : 0.05,
+              ),
               blurRadius: (isSelected || _isExpanded) ? 8 : 4,
               offset: Offset(0, (isSelected || _isExpanded) ? 4 : 2),
             ),
@@ -596,16 +604,24 @@ class _ExpandableRecordingCardState
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          widget.recording.isBackedUp ? Icons.cloud_download_outlined : Icons.cloud_off_rounded,
+                          widget.recording.isBackedUp
+                              ? Icons.cloud_download_outlined
+                              : Icons.cloud_off_rounded,
                           size: 18,
-                          color: Theme.of(context).textTheme.displaySmall?.color,
+                          color: Theme.of(
+                            context,
+                          ).textTheme.displaySmall?.color,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          widget.recording.isBackedUp ? 'Download audio to play' : 'Audio not uploaded yet',
+                          widget.recording.isBackedUp
+                              ? 'Download audio to play'
+                              : 'Audio not uploaded yet',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Theme.of(context).textTheme.displaySmall?.color,
+                            color: Theme.of(
+                              context,
+                            ).textTheme.displaySmall?.color,
                           ),
                         ),
                       ],
@@ -622,10 +638,14 @@ class _ExpandableRecordingCardState
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        _formatDuration(Duration(milliseconds: _currentPositionMs)),
+                        _formatDuration(
+                          Duration(milliseconds: _currentPositionMs),
+                        ),
                         style: TextStyle(
                           fontSize: 11,
-                          color: Theme.of(context).textTheme.displaySmall?.color,
+                          color: Theme.of(
+                            context,
+                          ).textTheme.displaySmall?.color,
                         ),
                       ),
                       if (!_isPlaying)
@@ -633,9 +653,11 @@ class _ExpandableRecordingCardState
                           '← drag to seek →',
                           style: TextStyle(
                             fontSize: 10,
-                            color: Theme.of(
-                              context,
-                            ).textTheme.displaySmall?.color?.withValues(alpha: 0.4),
+                            color: Theme.of(context)
+                                .textTheme
+                                .displaySmall
+                                ?.color
+                                ?.withValues(alpha: 0.4),
                             fontStyle: FontStyle.italic,
                           ),
                         ),
@@ -643,7 +665,9 @@ class _ExpandableRecordingCardState
                         widget.recording.formattedDuration,
                         style: TextStyle(
                           fontSize: 11,
-                          color: Theme.of(context).textTheme.displaySmall?.color,
+                          color: Theme.of(
+                            context,
+                          ).textTheme.displaySmall?.color,
                         ),
                       ),
                     ],
@@ -817,8 +841,8 @@ class _CardHintsStrip extends StatelessWidget {
             children: _hints
                 .map(
                   (h) =>
-                  _HintChip(icon: h.icon, label: h.label, color: h.color),
-            )
+                      _HintChip(icon: h.icon, label: h.label, color: h.color),
+                )
                 .toList(),
           ),
         ],
