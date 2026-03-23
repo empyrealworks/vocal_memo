@@ -343,7 +343,7 @@ class SettingsScreen extends ConsumerWidget {
               showAboutDialog(
                 context: context,
                 applicationName: "Vocal Memo",
-                applicationVersion: "1.3.0",
+                applicationVersion: "1.3.5",
                 applicationLegalese: "© 2026 Adeleke Olasope",
               );
             },
