@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Data Deletion – Vocal Memo</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e, #0f1419);
+      color: rgba(255,255,255,0.85);
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 4rem 1.5rem;
+    }
+
+    .back-link {
+      display: inline-block;
+      color: rgba(255,255,255,0.45);
+      text-decoration: none;
+      font-size: 0.875rem;
+      margin-bottom: 2.5rem;
+      transition: color 0.2s;
+    }
+    .back-link:hover { color: #21F4C1; }
+
+    h1 {
+      font-size: 2.8rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #21F4C1, #3A6BFF);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+
+    .meta {
+      color: rgba(255,255,255,0.4);
+      font-size: 0.875rem;
+      margin-bottom: 2.5rem;
+    }
+
+    h2 {
+      color: #21F4C1;
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-top: 3rem;
+      margin-bottom: 0.75rem;
+    }
+
+    h3 {
+      color: rgba(255,255,255,0.8);
+      font-size: 1rem;
+      font-weight: 600;
+      margin-top: 1.5rem;
+      margin-bottom: 0.4rem;
+    }
+
+    p {
+      color: rgba(255,255,255,0.75);
+      margin-bottom: 1rem;
+    }
+
+    ul, ol {
+      color: rgba(255,255,255,0.75);
+      padding-left: 1.4rem;
+      margin-bottom: 1rem;
+    }
+    li { margin-bottom: 0.4rem; }
+
+    a { color: #21F4C1; text-decoration: none; }
+    a:hover { color: #3A6BFF; }
+    strong { color: rgba(255,255,255,0.95); }
+
+    /* Summary / info callout */
+    .highlight {
+      background: rgba(58,107,255,0.08);
+      border-left: 4px solid #3A6BFF;
+      padding: 1.25rem 1.5rem;
+      border-radius: 0 12px 12px 0;
+      margin: 2rem 0;
+    }
+    .highlight p { margin-bottom: 0.5rem; }
+    .highlight p:last-child { margin-bottom: 0; }
+
+    /* Warning / deletion callout */
+    .callout-warn {
+      background: rgba(239,68,68,0.07);
+      border-left: 4px solid #EF4444;
+      padding: 1.25rem 1.5rem;
+      border-radius: 0 12px 12px 0;
+      margin: 1.5rem 0;
+    }
+    .callout-warn p { margin-bottom: 0.5rem; }
+    .callout-warn p:last-child { margin-bottom: 0; }
+
+    /* Step cards */
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+    }
+
+    .step-number {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #21F4C1, #3A6BFF);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #0f1419;
+      margin-top: 2px;
+    }
+
+    .step-body { flex: 1; }
+    .step-body strong {
+      display: block;
+      margin-bottom: 0.2rem;
+      font-size: 0.95rem;
+    }
+    .step-body p {
+      font-size: 0.875rem;
+      margin-bottom: 0;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* Data table */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.5rem;
+      font-size: 0.9rem;
+    }
+    .data-table th {
+      text-align: left;
+      color: rgba(255,255,255,0.4);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .data-table td {
+      padding: 0.65rem 0.75rem;
+      color: rgba(255,255,255,0.75);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      vertical-align: top;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table td:first-child {
+      color: rgba(255,255,255,0.9);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.15rem 0.5rem;
+      border-radius: 99px;
+    }
+    .badge-red   { background: rgba(239,68,68,0.15);  color: #EF4444; }
+    .badge-green { background: rgba(33,244,193,0.15); color: #21F4C1; }
+
+    hr {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      margin: 3rem 0;
+    }
+
+    footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.3);
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 2rem; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <a href="index.html" class="back-link">← Back to Vocal Memo</a>
+
+    <h1>Data Deletion</h1>
+    <p class="meta">
+      Vocal Memo &nbsp;·&nbsp; Empyreal Works &nbsp;·&nbsp; Last updated March 2026
+    </p>
+
+    <div class="highlight">
+      <p>
+        🔒 &nbsp;<strong>Guest users</strong> (no account) store all data locally on their device.
+        There is no cloud data to delete — simply uninstall the app.
+      </p>
+      <p>
+        ☁️ &nbsp;<strong>Signed-in users</strong> can request full deletion of their account and
+        all associated cloud data directly from within the app. Requests are processed within 30 days.
+      </p>
+    </div>
+
+    <!-- How to request deletion -->
+    <h2>How to Request Deletion</h2>
+    <p>
+      Follow these steps inside the Vocal Memo app to submit a deletion request. You do not need to
+      contact us separately — the in-app form is the official deletion channel.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-body">
+          <strong>Open Settings</strong>
+          <p>Tap the settings icon on the home screen.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-body">
+          <strong>Go to Account</strong>
+          <p>Make sure you are signed in. Your account email will be shown at the top of the Account section.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-body">
+          <strong>Tap "Delete Account"</strong>
+          <p>This opens the deletion request form. You can optionally provide a reason for leaving.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">4</div>
+        <div class="step-body">
+          <strong>Submit the request</strong>
+          <p>Tap <em>Submit Request</em>. You will be signed out immediately and receive an on-screen confirmation.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">5</div>
+        <div class="step-body">
+          <strong>Wait up to 30 days</strong>
+          <p>Your account and all cloud data will be permanently deleted within 30 days of your request.</p>
+        </div>
+      </div>
+    </div>
+
+    <p>
+      Can't access the app? Email us at
+      <a href="mailto:hello@empyrealworks.com">hello@empyrealworks.com</a>
+      with the subject line <strong>"Data Deletion Request"</strong> and your account email address.
+    </p>
+
+    <hr>
+
+    <!-- What gets deleted -->
+    <h2>What Gets Deleted</h2>
+
+    <div class="callout-warn">
+      <p>
+        Deletion is <strong>permanent and irreversible.</strong>
+        Once your request is processed, your data cannot be recovered.
+      </p>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Location</th>
+          <th>Deleted?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Firebase account &amp; sign-in credentials</td>
+          <td>Firebase Authentication</td>
+          <td><span class="badge badge-red">Yes</span></td>
+        </tr>
+        <tr>
+          <td>Recording metadata, titles, tags, transcripts</td>
+          <td>Cloud Firestore</td>
+          <td><span class="badge badge-red">Yes</span></td>
+        </tr>
+        <tr>
+          <td>Backed-up audio files</td>
+          <td>Firebase Storage</td>
+          <td><span class="badge badge-red">Yes</span></td>
+        </tr>
+        <tr>
+          <td>Daily transcription usage count</td>
+          <td>Cloud Firestore</td>
+          <td><span class="badge badge-red">Yes</span></td>
+        </tr>
+        <tr>
+          <td>Local recordings on your device</td>
+          <td>Device storage only</td>
+          <td><span class="badge badge-green">Not affected</span></td>
+        </tr>
+        <tr>
+          <td>App settings &amp; preferences</td>
+          <td>Device storage only</td>
+          <td><span class="badge badge-green">Not affected</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      Local recordings stored on your device are <strong>never uploaded automatically</strong> and
+      are therefore not included in the cloud deletion. To remove local recordings, delete them
+      individually within the app or uninstall the app.
+    </p>
+
+    <hr>
+
+    <!-- Timeline -->
+    <h2>Timeline</h2>
+    <p>
+      We process all deletion requests within <strong>30 days</strong> of submission —
+      in line with Google Play's data deletion policy and GDPR Article 17 requirements.
+    </p>
+    <p>
+      You will be signed out of the app immediately when you submit your request.
+      If you have a pending request and change your mind, contact us at
+      <a href="mailto:hello@empyrealworks.com">hello@empyrealworks.com</a>
+      before the 30-day window closes.
+    </p>
+
+    <hr>
+
+    <!-- Contact -->
+    <h2>Contact</h2>
+    <p>
+      <strong>Adeleke Olasope / Empyreal Works</strong><br>
+      <a href="mailto:hello@empyrealworks.com">hello@empyrealworks.com</a>
+    </p>
+    <p>
+      For general privacy information, see our
+      <a href="privacy_policy.html">Privacy Policy</a>.
+    </p>
+
+    <footer>
+      <p>Vocal Memo &nbsp;·&nbsp; Empyreal Works &nbsp;·&nbsp; Data Deletion Policy &nbsp;·&nbsp; March 2026</p>
+    </footer>
+
+  </div>
+</body>
+</html>

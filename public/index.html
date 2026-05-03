@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vocal Memo – Voice Notes & AI Transcription</title>
+
+  <meta name="description" content="Vocal Memo is a clean, ad-free voice recording app with AI transcription, encrypted cloud backup, and offline-first design. Capture ideas instantly — no distractions.">
+  <meta name="keywords" content="Voice Recorder, AI Transcription, Voice Notes, Audio Recording, Cloud Backup, Offline Recorder, Vocal Memo, Gemini AI">
+  <link rel="shortcut icon" href="../../assets/images/vocal-memo/small_logo.png" type="image/png">
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary: #A068FF;
+      --secondary: #21F4C1;
+      --orange: #FF7043;
+      --dark: #1a1a2e;
+      --darker: #0f1419;
+      --card-bg: rgba(255,255,255,0.03);
+      --border: rgba(160,104,255,0.22);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, var(--dark), var(--darker));
+      color: #fff;
+      overflow-x: hidden;
+    }
+
+    /* ── Utilities ─────────────────────────────────────────── */
+    .gradient-text {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .section-title {
+      font-family: 'Orbitron', sans-serif;
+      text-align: center;
+      font-size: clamp(1.9rem, 4.5vw, 3rem);
+      font-weight: 900;
+      margin-bottom: 3.5rem;
+    }
+
+    /* ── Hero ──────────────────────────────────────────────── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 5rem 2rem 4rem;
+      overflow: hidden;
+    }
+
+    .hero::before, .hero::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      animation: float 8s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .hero::before {
+      width: 520px; height: 520px;
+      background: radial-gradient(circle, rgba(160,104,255,0.16), transparent);
+      top: -180px; right: -140px;
+    }
+    .hero::after {
+      width: 420px; height: 420px;
+      background: radial-gradient(circle, rgba(33,244,193,0.16), transparent);
+      bottom: -140px; left: -140px;
+      animation-direction: reverse;
+    }
+
+    @keyframes float {
+      0%,100% { transform: translateY(0); }
+      50% { transform: translateY(-28px); }
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 5;
+      max-width: 1200px;
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5rem;
+      align-items: center;
+    }
+
+    @media (max-width: 900px) {
+      .hero-inner { grid-template-columns: 1fr; text-align: center; gap: 3rem; }
+      .hero-cta { justify-content: center; }
+    }
+
+    .app-logo {
+      width: 150px; height: 150px;
+      border-radius: 22px;
+      border: 2px solid var(--primary);
+      box-shadow: 0 0 30px rgba(160,104,255,0.4);
+      margin-bottom: 1.5rem;
+      animation: pulse 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 30px rgba(160,104,255,0.4); }
+      50% { box-shadow: 0 0 55px rgba(33,244,193,0.45); }
+    }
+
+    .hero-text h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(2rem, 5vw, 3.6rem);
+      font-weight: 900;
+      line-height: 1.1;
+      margin-bottom: 1.3rem;
+    }
+
+    .hero-text p {
+      font-size: clamp(1rem, 2.5vw, 1.2rem);
+      color: rgba(255,255,255,0.75);
+      line-height: 1.7;
+      margin-bottom: 2.2rem;
+    }
+
+    .hero-cta { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+    .btn-primary-grad {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.95rem 2.2rem;
+      border-radius: 50px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      font-weight: 800;
+      font-size: 1rem;
+      color: #000;
+      text-decoration: none;
+      box-shadow: 0 10px 40px rgba(160,104,255,0.3);
+      transition: all 0.3s ease;
+      border: none;
+    }
+    .btn-primary-grad:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 16px 55px rgba(33,244,193,0.4);
+      color: #000;
+    }
+
+    .btn-outline-grad {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.9rem 2rem;
+      border-radius: 50px;
+      background: transparent;
+      border: 2px solid var(--primary);
+      color: #fff;
+      font-weight: 700;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: all 0.3s ease;
+    }
+    .btn-outline-grad:hover {
+      background: rgba(160,104,255,0.1);
+      color: #fff;
+      transform: translateY(-3px);
+    }
+
+    /* ── Hero Carousel ────────────────────────────────────── */
+    .hero-mockup {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hero-carousel {
+      position: relative;
+      width: 100%;
+      max-width: 320px;
+      margin: 0 auto;
+    }
+
+    /* Subtle glow ring behind the phone */
+    .hero-carousel::before {
+      content: '';
+      position: absolute;
+      inset: -28px;
+      border-radius: 50%;
+      background: radial-gradient(ellipse, rgba(160,104,255,0.22) 0%, transparent 72%);
+      pointer-events: none;
+      z-index: 0;
+      animation: glowPulse 4s ease-in-out infinite;
+    }
+
+    @keyframes glowPulse {
+      0%,100% { opacity: 0.7; transform: scale(1); }
+      50%      { opacity: 1;   transform: scale(1.06); }
+    }
+
+    .carousel-track {
+      position: relative;
+      z-index: 1;
+      overflow: hidden;
+      border-radius: 32px;
+      border: 1.5px solid var(--border);
+      box-shadow:
+        0 30px 80px rgba(0,0,0,0.55),
+        0 0 50px rgba(160,104,255,0.18);
+      background: #111;
+      aspect-ratio: 9/19;
+    }
+
+    .carousel-slide {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transform: translateX(60px) scale(0.97);
+      transition: opacity 0.55s cubic-bezier(.4,0,.2,1),
+                  transform 0.55s cubic-bezier(.4,0,.2,1);
+      pointer-events: none;
+    }
+
+    .carousel-slide.active {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .carousel-slide.exit {
+      opacity: 0;
+      transform: translateX(-60px) scale(0.97);
+    }
+
+    .carousel-slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: 30px;
+    }
+
+    /* Slide caption overlay */
+    .slide-caption {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 2rem 1.4rem 1.6rem;
+      background: linear-gradient(to top, rgba(0,0,0,0.78) 0%, transparent 100%);
+      border-radius: 0 0 30px 30px;
+      z-index: 2;
+    }
+
+    .slide-caption span {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.7rem;
+      border-radius: 50px;
+      background: rgba(160,104,255,0.3);
+      border: 1px solid rgba(160,104,255,0.5);
+      color: var(--primary);
+      margin-bottom: 0.45rem;
+    }
+
+    .slide-caption p {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: rgba(255,255,255,0.92);
+      line-height: 1.4;
+    }
+
+    /* Dots */
+    .carousel-dots {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 1.4rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.25);
+      cursor: pointer;
+      border: none;
+      padding: 0;
+      transition: all 0.3s ease;
+    }
+
+    .dot.active {
+      background: var(--secondary);
+      width: 22px;
+      border-radius: 4px;
+      box-shadow: 0 0 8px rgba(33,244,193,0.6);
+    }
+
+    /* Prev / next arrows */
+    .carousel-arrows {
+      position: absolute;
+      top: 50%;
+      left: -50px;
+      right: -50px;
+      transform: translateY(-50%);
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 3;
+      padding: 0 0.5rem;
+    }
+
+    .carousel-arrow {
+      pointer-events: auto;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(160,104,255,0.18);
+      border: 1px solid rgba(160,104,255,0.35);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.25s ease;
+      backdrop-filter: blur(6px);
+    }
+
+    .carousel-arrow:hover {
+      background: rgba(33,244,193,0.22);
+      border-color: var(--secondary);
+      transform: scale(1.1);
+    }
+
+    /* Progress bar */
+    .carousel-progress {
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--primary), var(--secondary));
+      border-radius: 2px;
+      z-index: 4;
+      animation: progressBar 4s linear infinite;
+      transform-origin: left;
+    }
+
+    @keyframes progressBar {
+      from { width: 0%; }
+      to   { width: 100%; }
+    }
+
+    /* ── Stats strip ──────────────────────────────────────── */
+    .stats-strip {
+      background: rgba(255,255,255,0.03);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 2rem 0;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      text-align: center;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .stat-item h3 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2rem;
+      font-weight: 900;
+      margin-bottom: 0.3rem;
+    }
+
+    .stat-item p {
+      color: rgba(255,255,255,0.6);
+      font-size: 0.9rem;
+      margin: 0;
+    }
+
+    /* ── Features ─────────────────────────────────────────── */
+    .features { padding: 100px 0; }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      gap: 1.8rem;
+    }
+
+    .feature-card {
+      background: var(--card-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 22px;
+      padding: 2rem;
+      transition: all 0.35s ease;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-8px);
+      border-color: var(--secondary);
+      box-shadow: 0 18px 55px rgba(33,244,193,0.18);
+    }
+
+    .feature-icon {
+      font-size: 2.6rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+
+    .feature-card h3 {
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .feature-card p {
+      color: rgba(255,255,255,0.65);
+      font-size: 0.9rem;
+      line-height: 1.65;
+      margin: 0;
+    }
+
+    .feature-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.2rem 0.6rem;
+      border-radius: 50px;
+      margin-bottom: 0.7rem;
+    }
+
+    .badge-ai {
+      background: rgba(160,104,255,0.2);
+      color: var(--primary);
+      border: 1px solid rgba(160,104,255,0.4);
+    }
+
+    .badge-free {
+      background: rgba(33,244,193,0.15);
+      color: var(--secondary);
+      border: 1px solid rgba(33,244,193,0.3);
+    }
+
+    /* ── Screenshots / Onboarding gallery ─────────────────── */
+    .screenshots { padding: 80px 0; }
+
+    .screens-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .screen-card {
+      text-align: center;
+    }
+
+    .screen-card img {
+      width: 100%;
+      max-width: 260px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .screen-card img:hover {
+      transform: scale(1.04) translateY(-6px);
+      box-shadow: 0 24px 60px rgba(160,104,255,0.25);
+    }
+
+    .screen-card p {
+      margin-top: 1rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.75);
+    }
+
+    /* ── Privacy promise ──────────────────────────────────── */
+    .privacy-section { padding: 80px 0; }
+
+    .privacy-box {
+      max-width: 860px;
+      margin: 0 auto;
+      background: linear-gradient(135deg, rgba(160,104,255,0.08), rgba(33,244,193,0.08));
+      border: 1.5px solid var(--primary);
+      border-radius: 28px;
+      padding: 3.5rem 2.5rem;
+      text-align: center;
+    }
+
+    .privacy-box h2 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      margin-bottom: 1.2rem;
+    }
+
+    .privacy-box p {
+      color: rgba(255,255,255,0.75);
+      font-size: 1.05rem;
+      line-height: 1.7;
+      max-width: 640px;
+      margin: 0 auto 2rem;
+    }
+
+    .privacy-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1.2rem;
+      margin-top: 2rem;
+    }
+
+    .privacy-item {
+      padding: 1.2rem;
+      background: rgba(255,255,255,0.04);
+      border-radius: 14px;
+      border: 1px solid var(--border);
+    }
+
+    .privacy-item .privacy-icon { font-size: 1.8rem; margin-bottom: 0.5rem; }
+    .privacy-item p { font-size: 0.82rem; margin: 0; color: rgba(255,255,255,0.7); }
+
+    /* ── Contact / CTA ────────────────────────────────────── */
+    .contact { padding: 100px 0; }
+
+    .contact-form-wrap {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 2.8rem;
+    }
+
+    .form-control, .form-control:focus {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(160,104,255,0.25);
+      color: #fff;
+      border-radius: 12px;
+      padding: 0.9rem 1.2rem;
+      transition: border-color 0.2s;
+    }
+    .form-control:focus {
+      box-shadow: 0 0 0 3px rgba(160,104,255,0.15);
+      border-color: var(--primary);
+    }
+    .form-control::placeholder { color: rgba(255,255,255,0.35); }
+    .form-label { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; }
+
+    .submit-btn {
+      width: 100%;
+      padding: 1rem;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border: none;
+      border-radius: 12px;
+      color: #000;
+      font-weight: 800;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 36px rgba(33,244,193,0.3);
+    }
+
+    .success-message {
+      display: none;
+      text-align: center;
+      border: 2px solid var(--secondary);
+      border-radius: 20px;
+      padding: 3rem;
+      animation: scaleIn 0.4s ease-out;
+    }
+    .success-message.active { display: block; }
+    @keyframes scaleIn {
+      from { transform: scale(0.92); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+    .success-message h3 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.5rem;
+      margin-bottom: 0.8rem;
+    }
+    .success-message p { color: rgba(255,255,255,0.7); }
+
+    /* ── Footer ───────────────────────────────────────────── */
+    footer {
+      background: rgba(0,0,0,0.55);
+      border-top: 1px solid rgba(160,104,255,0.12);
+      padding: 2.5rem 0;
+      text-align: center;
+    }
+
+    .footer-links a {
+      color: rgba(255,255,255,0.55);
+      text-decoration: none;
+      margin: 0 0.8rem;
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--secondary); }
+
+    .footer-copy {
+      color: rgba(255,255,255,0.35);
+      font-size: 0.82rem;
+      margin-top: 0.8rem;
+    }
+  </style>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════════════ HERO ═══════════════════════ -->
+<section class="hero">
+  <div class="hero-inner container-fluid px-4 px-md-5">
+
+    <!-- Left: copy -->
+    <div class="hero-text">
+      <img src="images/logo.png" class="app-logo" alt="Vocal Memo">
+      <h1>
+        Think it.<br>
+        Say it.<br>
+        <span class="gradient-text">Keep it.</span>
+      </h1>
+      <p>
+        Capture ideas, meetings, and moments with a single tap.
+        AI transcription, encrypted cloud backup, and works perfectly offline.
+        No ads. No tracking. Yours.
+      </p>
+
+      <div class="hero-cta">
+        <a href="https://play.google.com/store/apps/details?id=com.empyrealworks.vocal_memo"
+           class="btn-primary-grad">
+          <i class="bi bi-google-play"></i>
+          Get on Google Play
+        </a>
+        <a href="#features" class="btn-outline-grad">
+          <i class="bi bi-play-circle"></i>
+          See features
+        </a>
+      </div>
+    </div>
+
+    <!-- Right: hero carousel -->
+    <div class="hero-mockup">
+      <div class="hero-carousel" id="heroCarousel">
+
+        <!-- Arrows sit outside the track so they don't get clipped -->
+        <div class="carousel-arrows">
+          <button class="carousel-arrow" id="prevBtn" aria-label="Previous">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <button class="carousel-arrow" id="nextBtn" aria-label="Next">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+        </div>
+
+        <div class="carousel-track" id="carouselTrack">
+
+          <!-- Slide 1 -->
+          <div class="carousel-slide active" data-index="0">
+            <img
+              src="images/home_light.png"
+              alt="Waveform playback screen"
+              onerror="this.closest('.carousel-slide').style.background='linear-gradient(135deg,#1a1a2e,#2d1a4a)'"
+            >
+            <div class="slide-caption">
+              <span>Playback</span>
+              <p>Scrollable waveform with scrubbing & speed control</p>
+            </div>
+          </div>
+
+          <!-- Slide 2 -->
+          <div class="carousel-slide" data-index="1">
+            <img
+              src="images/home_dark.png"
+              alt="One-tap recording screen"
+              onerror="this.closest('.carousel-slide').style.background='linear-gradient(135deg,#0f1419,#1a2e1a)'"
+            >
+            <div class="slide-caption">
+              <span>Home</span>
+              <p>Record, transcribe, and organize your recordings</p>
+            </div>
+          </div>
+
+          <!-- Slide 3 -->
+          <div class="carousel-slide" data-index="2">
+            <img
+              src="images/transcript_light.png"
+              alt="AI transcription screen"
+              onerror="this.closest('.carousel-slide').style.background='linear-gradient(135deg,#0f1419,#2a1a0f)'"
+            >
+            <div class="slide-caption">
+              <span>AI Transcription</span>
+              <p>Gemini-powered — accurate text in seconds</p>
+            </div>
+          </div>
+
+          <!-- Slide 4 -->
+          <div class="carousel-slide" data-index="3">
+            <img
+              src="images/settings_light.png"
+              alt="Cross-device cloud sync"
+              onerror="this.closest('.carousel-slide').style.background='linear-gradient(135deg,#0f1419,#0f2a2a)'"
+            >
+            <div class="slide-caption">
+              <span>Cloud Sync</span>
+              <p>Real-time sync across all your devices</p>
+            </div>
+          </div>
+
+          <!-- Progress bar (animates per slide) -->
+          <div class="carousel-progress" id="carouselProgress"></div>
+        </div>
+
+        <!-- Dots -->
+        <div class="carousel-dots" id="carouselDots">
+          <button class="dot active" data-dot="0" aria-label="Slide 1"></button>
+          <button class="dot" data-dot="1" aria-label="Slide 2"></button>
+          <button class="dot" data-dot="2" aria-label="Slide 3"></button>
+          <button class="dot" data-dot="3" aria-label="Slide 4"></button>
+          <button class="dot" data-dot="4" aria-label="Slide 5"></button>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════ STATS STRIP ════════════════ -->
+<div class="stats-strip">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <h3 class="gradient-text">1-tap</h3>
+        <p>Start recording instantly</p>
+      </div>
+      <div class="stat-item">
+        <h3 class="gradient-text">AI</h3>
+        <p>Gemini-powered transcription</p>
+      </div>
+      <div class="stat-item">
+        <h3 class="gradient-text">AES-256</h3>
+        <p>Encrypted cloud backup</p>
+      </div>
+      <div class="stat-item">
+        <h3 class="gradient-text">0 ads</h3>
+        <p>Ever. No exceptions.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ FEATURES ═══════════════════ -->
+<section class="features" id="features">
+  <div class="container">
+    <h2 class="section-title">Why <span class="gradient-text">Vocal Memo</span>?</h2>
+
+    <div class="feature-grid">
+
+      <div class="feature-card">
+        <span class="feature-badge badge-free">Free</span>
+        <span class="feature-icon">🎙️</span>
+        <h3>Instant Recording</h3>
+        <p>One tap to start. Optional start/stop beeps. Works completely offline — recordings save locally with no internet required.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-badge badge-ai">AI</span>
+        <span class="feature-icon">✨</span>
+        <h3>AI Transcription</h3>
+        <p>Powered by Gemini. Get accurate text from your voice in seconds. Signed-in users get the better model automatically.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-badge badge-free">Free</span>
+        <span class="feature-icon">📈</span>
+        <h3>Scrollable Waveform</h3>
+        <p>See a rich audio timeline that scrolls as your recording plays. Drag anywhere to scrub. 0.5× to 2× playback speed.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-badge badge-ai">Account</span>
+        <span class="feature-icon">☁️</span>
+        <h3>Encrypted Cloud Backup</h3>
+        <p>AES-256 encrypted uploads to Firebase Storage. Queue works offline — recordings sync the moment you reconnect.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-badge badge-ai">Account</span>
+        <span class="feature-icon">✂️</span>
+        <h3>Audio Editing</h3>
+        <p>Trim unwanted sections with precision dual-handle sliders. Auto-trim silence detection. Multi-segment support.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-badge badge-free">Free</span>
+        <span class="feature-icon">🔍</span>
+        <h3>Smart Search</h3>
+        <p>Full-text search across titles and transcripts. Filter by date range, duration, favourites, and pinned recordings.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-badge badge-ai">Account</span>
+        <span class="feature-icon">🔄</span>
+        <h3>Cross-Device Sync</h3>
+        <p>Firestore-powered real-time sync keeps your recording list current across all devices. Changes appear instantly everywhere.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-badge badge-free">Free</span>
+        <span class="feature-icon">🌙</span>
+        <h3>Dark & Light Themes</h3>
+        <p>Follows your system preference or lock to either. Clean minimal design that stays out of your way.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ APP SCREENSHOTS ════════════ -->
+<section class="screenshots">
+  <div class="container">
+    <h2 class="section-title">
+      Built for <span class="gradient-text">Every Moment</span>
+    </h2>
+    <p class="text-center mb-5" style="color:rgba(255,255,255,0.6); font-size:1.05rem; max-width:560px; margin:0 auto 3rem;">
+      From quick voice notes to long meetings — Vocal Memo handles it all.
+    </p>
+
+    <div class="screens-grid">
+      <div class="screen-card">
+        <img src="../../assets/images/vocal-memo/onboarding_record.png"
+             alt="Instant recording — one tap to start">
+        <p>Instant Recording</p>
+      </div>
+      <div class="screen-card">
+        <img src="../../assets/images/vocal-memo/onboarding_transcribe.png"
+             alt="AI-powered transcription">
+        <p>AI Transcription</p>
+      </div>
+      <div class="screen-card">
+        <img src="../../assets/images/vocal-memo/onboarding_organize.png"
+             alt="Organize and search your recordings">
+        <p>Organize & Search</p>
+      </div>
+      <div class="screen-card">
+        <img src="../../assets/images/vocal-memo/onboarding_sync.png"
+             alt="Cloud sync across devices">
+        <p>Cloud Sync</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ PRIVACY PROMISE ════════════ -->
+<section class="privacy-section">
+  <div class="container">
+    <div class="privacy-box">
+      <h2>Your Voice, <span class="gradient-text">Your Data</span></h2>
+      <p>
+        Vocal Memo is designed with privacy as a foundation, not an afterthought.
+        We collect only what's needed to make the app work, and never sell or share
+        your data with advertisers.
+      </p>
+
+      <div class="privacy-grid">
+        <div class="privacy-item">
+          <div class="privacy-icon">🚫</div>
+          <p>No ads, ever</p>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">🔒</div>
+          <p>AES-256 encrypted backups</p>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">📴</div>
+          <p>Works fully offline</p>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">🗑️</div>
+          <p>Delete your data anytime</p>
+        </div>
+        <div class="privacy-item">
+          <div class="privacy-icon">👤</div>
+          <p>No account required</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ CONTACT ════════════════════ -->
+<section id="contact" class="contact">
+  <div class="container">
+    <h2 class="section-title">
+      Get in <span class="gradient-text">Touch</span>
+    </h2>
+    <div class="row justify-content-center">
+      <div class="col-lg-6">
+
+        <form id="contactForm" class="contact-form-wrap">
+          <div class="mb-4">
+            <label for="name" class="form-label">Your Name</label>
+            <input type="text" id="name" class="form-control"
+              placeholder="Jane Doe" required>
+          </div>
+          <div class="mb-4">
+            <label for="email" class="form-label">Email Address</label>
+            <input type="email" id="email" class="form-control"
+              placeholder="you@example.com" required>
+          </div>
+          <div class="mb-4">
+            <label for="message" class="form-label">Message</label>
+            <textarea id="message" class="form-control" rows="5"
+              placeholder="Feedback, feature requests, support questions…"></textarea>
+          </div>
+          <button type="submit" class="submit-btn">Send Message</button>
+        </form>
+
+        <div class="success-message mt-4" id="success-message">
+          <h3>✓ Message Sent!</h3>
+          <p>Thanks for reaching out — we'll get back to you soon.</p>
+          <button class="submit-btn mt-3" onclick="resetForm('contactForm')"
+            style="max-width:220px; margin:1.5rem auto 0; display:block;">
+            Send Another
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ FOOTER ═════════════════════ -->
+<footer>
+  <div class="container">
+    <div class="footer-links mb-2">
+      <a href="privacy-policy.html">Privacy Policy</a>
+      <a href="delete-my-data.html">Delete My Data</a>
+      <a href="mailto:hello@empyrealworks.com">Contact</a>
+    </div>
+    <p class="footer-copy">&copy; 2025 Empyreal Digital Works · Vocal Memo</p>
+  </div>
+</footer>
+
+<script src="js/form-handler.js"></script>
+
+<script>
+  // ── Hero Carousel ────────────────────────────────────────────
+  (function () {
+    const slides       = document.querySelectorAll('.carousel-slide');
+    const dots         = document.querySelectorAll('.dot');
+    const progress     = document.getElementById('carouselProgress');
+    const prevBtn      = document.getElementById('prevBtn');
+    const nextBtn      = document.getElementById('nextBtn');
+    const INTERVAL     = 4000; // ms per slide
+
+    let current  = 0;
+    let timer    = null;
+    let paused   = false;
+
+    function goTo(index, direction = 'next') {
+      const prev = current;
+      current = (index + slides.length) % slides.length;
+
+      // Exit animation on old slide
+      slides[prev].classList.remove('active');
+      slides[prev].classList.add('exit');
+      setTimeout(() => slides[prev].classList.remove('exit'), 560);
+
+      // Enter animation on new slide
+      slides[current].classList.add('active');
+
+      // Dots
+      dots.forEach((d, i) => d.classList.toggle('active', i === current));
+
+      // Restart progress bar animation
+      resetProgress();
+    }
+
+    function next() { goTo(current + 1, 'next'); }
+    function prev() { goTo(current - 1, 'prev'); }
+
+    function resetProgress() {
+      if (progress) {
+        progress.style.animation = 'none';
+        // Force reflow
+        void progress.offsetWidth;
+        progress.style.animation = `progressBar ${INTERVAL}ms linear`;
+      }
+    }
+
+    function startAuto() {
+      clearInterval(timer);
+      timer = setInterval(() => { if (!paused) next(); }, INTERVAL);
+    }
+
+    // Dot clicks
+    dots.forEach(dot => {
+      dot.addEventListener('click', () => {
+        const idx = parseInt(dot.dataset.dot, 10);
+        goTo(idx);
+        startAuto(); // reset interval
+      });
+    });
+
+    // Arrow clicks
+    prevBtn.addEventListener('click', () => { prev(); startAuto(); });
+    nextBtn.addEventListener('click', () => { next(); startAuto(); });
+
+    // Pause on hover
+    const carousel = document.getElementById('heroCarousel');
+    carousel.addEventListener('mouseenter', () => { paused = true; });
+    carousel.addEventListener('mouseleave', () => { paused = false; });
+
+    // Touch / swipe support
+    let touchStartX = 0;
+    carousel.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+    carousel.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (Math.abs(dx) > 40) {
+        dx < 0 ? next() : prev();
+        startAuto();
+      }
+    }, { passive: true });
+
+    // Kick off
+    resetProgress();
+    startAuto();
+  })();
+</script>
+
+</body>
+</html>
