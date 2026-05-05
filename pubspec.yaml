@@ -6,7 +6,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.3.5+11
 
 environment:
-  sdk: ^3.9.2
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -14,7 +14,7 @@ dependencies:
 
   # Core dependencies
   cupertino_icons: ^1.0.8
-  intl: ^0.20.2
+  intl: ^0.19.0
   uuid: ^4.5.1
 
   # Audio recording and playback
@@ -25,8 +25,8 @@ dependencies:
   audio_waveforms: ^2.0.2
 
   # State management
-  flutter_riverpod: ^3.0.3
-  riverpod: ^3.0.3
+  flutter_riverpod: ^2.6.1
+  riverpod: ^2.6.1
 
   # Storage
   hive_flutter: ^1.1.0
@@ -64,10 +64,10 @@ dev_dependencies:
   flutter_launcher_icons: "^0.14.4"
   build_runner: ^2.4.13
   hive_generator: ^2.0.1
+  envied_generator: ^1.0.1
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
-  envied_generator: ^1.1.1
 
 flutter_launcher_icons:
   android: true
@@ -78,8 +78,6 @@ flutter_launcher_icons:
   ios: true
   image_path_ios: "assets/images/logo.png"
   adaptive_icon_background_ios: "#F3F9F5"
-
-  flutter_lints: ^5.0.0
 
 # The following section is specific to Flutter packages.
 flutter:

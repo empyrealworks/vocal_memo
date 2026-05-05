@@ -1,7 +1,6 @@
 // lib/providers/auth_provider.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:vocal_memo/providers/connectivity_provider.dart';
 import 'package:vocal_memo/providers/recording_provider.dart';
 import 'package:vocal_memo/providers/settings_provider.dart';
