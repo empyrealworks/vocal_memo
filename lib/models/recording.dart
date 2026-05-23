@@ -62,7 +62,8 @@ class Recording {
 
   String get displayTranscript {
     if (transcript == null || transcript!.isEmpty) return '';
-    return EncryptionService.decrypt(transcript!);
+    final encryptionService = EncryptionService();
+    return encryptionService.decrypt(transcript!);
   }
 
   // ─── Serialisation ────────────────────────────────────────────

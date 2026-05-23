@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:record/record.dart';
 import 'package:vocal_memo/providers/recording_provider.dart';
 import 'package:vocal_memo/providers/settings_provider.dart';
 import 'package:vocal_memo/services/audio_service.dart';

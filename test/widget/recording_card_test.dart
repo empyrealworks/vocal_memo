@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vocal_memo/models/recording.dart';
 import 'package:vocal_memo/widgets/expandable_recording_card.dart';
-import 'package:vocal_memo/theme/app_theme.dart';
 
 void main() {
   final testRecording = Recording(

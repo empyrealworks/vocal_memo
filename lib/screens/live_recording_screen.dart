@@ -69,7 +69,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen>
 
   void _onTaskData(Object data) {
     if (data is! Map) return;
-    final type = (data as Map)['type'] as String?;
+    final type = (data)['type'] as String?;
 
     switch (type) {
       case 'notif_pause_pressed':

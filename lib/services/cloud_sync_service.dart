@@ -2,7 +2,6 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'package:vocal_memo/services/encryption_service.dart';
 import '../models/recording.dart';
 import '../models/recording_settings.dart';
 import 'auth_service.dart';
@@ -142,11 +141,8 @@ class CloudSyncService {
       final batch = _firestore.batch();
       final ref = _recordingsRef!;
       for (final recording in recordings) {
-        final json = recording.toCloudJson();
-        if (recording.transcript != null) {
-          json['transcript'] = EncryptionService.encrypt(recording.transcript!);
-        }
-        batch.set(ref.doc(recording.id), json);
+        // [toCloudJson] already includes the (encrypted) transcript.
+        batch.set(ref.doc(recording.id), recording.toCloudJson());
       }
       await batch.commit();
     } catch (e) {

@@ -1,5 +1,4 @@
 // lib/screens/onboarding_screen.dart
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 

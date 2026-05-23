@@ -69,7 +69,8 @@ class FirebaseStorageService {
 
       // 1. Read raw bytes and encrypt
       final rawBytes = await originalFile.readAsBytes();
-      final encryptedBytes = EncryptionService.encryptBytes(rawBytes);
+      final encryptionService = EncryptionService();
+      final encryptedBytes = encryptionService.encryptBytes(rawBytes);
 
       // 2. Write encrypted bytes to a temp file
       final tempDir = await getTemporaryDirectory();
@@ -189,7 +190,8 @@ class FirebaseStorageService {
 
       // 2. Read encrypted bytes and decrypt
       final encryptedBytes = await encryptedTempFile.readAsBytes();
-      final decryptedBytes = EncryptionService.decryptBytes(encryptedBytes);
+      final encryptionService = EncryptionService();
+      final decryptedBytes = encryptionService.decryptBytes(encryptedBytes);
 
       // 3. Write decrypted audio to the final path
       await finalFile.writeAsBytes(decryptedBytes);

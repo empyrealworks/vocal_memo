@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/connectivity_provider.dart';
-import '../theme/app_theme.dart';
 
 /// Wraps [child] and overlays a slim connectivity banner at the bottom of the
 /// screen whenever the device is offline, or briefly when it comes back online.

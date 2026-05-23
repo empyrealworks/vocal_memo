@@ -64,7 +64,8 @@ class _TranscriptViewerScreenState
     }
 
     try {
-      final encrypted = EncryptionService.encrypt(newTranscript);
+      final encryptionService = EncryptionService();
+      final encrypted = encryptionService.encrypt(newTranscript);
       await ref.read(recordingProvider.notifier).updateRecording(
         widget.recording.copyWith(transcript: encrypted),
       );

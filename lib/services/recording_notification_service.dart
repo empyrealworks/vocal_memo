@@ -86,7 +86,7 @@ class RecordingTaskHandler extends TaskHandler {
   @override
   void onReceiveData(Object data) {
     if (data is! Map) return;
-    final type = (data as Map)['type'] as String?;
+    final type = (data)['type'] as String?;
     switch (type) {
       case 'ui_paused':
         _applyPause();

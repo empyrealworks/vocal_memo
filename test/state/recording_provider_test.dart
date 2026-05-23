@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vocal_memo/models/recording.dart';
 import 'package:vocal_memo/providers/recording_provider.dart';
-import 'package:vocal_memo/services/storage_service.dart';
 import '../test_utils.dart';
 
 void main() {

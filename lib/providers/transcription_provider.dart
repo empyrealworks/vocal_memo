@@ -76,7 +76,8 @@ class TranscriptionNotifier extends StateNotifier<TranscriptionState> {
 
       if (transcript != null && transcript.isNotEmpty) {
         // 🔐 ENCRYPT BEFORE SAVING
-        final encryptedTranscript = EncryptionService.encrypt(transcript);
+        final encryptionService = EncryptionService();
+        final encryptedTranscript = encryptionService.encrypt(transcript);
         // Update the recording with transcript
         final recordingNotifier = _ref.read(recordingProvider.notifier);
         final updatedRecording = recording.copyWith(

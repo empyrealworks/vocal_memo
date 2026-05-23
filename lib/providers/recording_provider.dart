@@ -105,7 +105,7 @@ class RecordingNotifier extends StateNotifier<List<Recording>> {
           final existing = localMap[id];
 
           final merged = cloudRec.copyWith(
-            filePath: existing?.filePath?.isNotEmpty == true
+            filePath: existing?.filePath.isNotEmpty == true
                 ? existing!.filePath
                 : cloudRec.filePath,
             waveformData: existing?.waveformData ?? cloudRec.waveformData,
